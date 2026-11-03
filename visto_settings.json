@@ -1,0 +1,118 @@
+{
+    "library_paths": [
+        "C:\\Users\\Andrea\\Downloads\\Telegram Desktop\\Breaking Bad",
+        "D:\\MULTIMEDIA\\SERIE TV\\YOU",
+        "D:\\MULTIMEDIA\\Film",
+        "D:\\MULTIMEDIA\\Film\\Salvate il soldato Ryan.mp4"
+    ],
+    "media_history": {
+        "Breaking Bad_S02E06_Una lezione indimenticabile.mkv": {
+            "last_timestamp": 2852783,
+            "total_duration": 2852783,
+            "status": true
+        },
+        "Breaking Bad_S02E05_Una pistola per Jesse.mkv": {
+            "last_timestamp": 2850143,
+            "total_duration": 2850143,
+            "status": true
+        },
+        "Breaking Bad_S03E09_Atmosfere.mkv": {
+            "last_timestamp": 4443,
+            "total_duration": 2849183,
+            "status": false
+        },
+        "Breaking Bad_S03E01_Ora basta.mkv": {
+            "last_timestamp": 384283,
+            "total_duration": 2848783,
+            "status": false
+        },
+        "Breaking Bad_S02E07_Nero e azzurro.mkv": {
+            "last_timestamp": 0,
+            "total_duration": 0,
+            "status": true
+        },
+        "Breaking Bad_S02E08_Conviene chiamare Saul.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "Breaking Bad_S02E09_4 giorni fuori.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "Breaking Bad_S02E10_Game Over.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "Breaking Bad_S02E11_Mandala.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "Breaking Bad_S02E12_Phoenix.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "Breaking Bad_S02E13_Albuquerque.mkv": {
+            "last_timestamp": 1000,
+            "total_duration": 1000,
+            "status": true
+        },
+        "YOU S03 03.mp4": {
+            "last_timestamp": 92274,
+            "total_duration": 2581413,
+            "status": false
+        },
+        "You.S5.E1.1080p.mp4": {
+            "last_timestamp": 15150,
+            "total_duration": 2889152,
+            "status": false
+        },
+        "YOU S03 09.mp4": {
+            "last_timestamp": 32401,
+            "total_duration": 2832038,
+            "status": false
+        },
+        "Salvate il soldato Ryan.mp4": {
+            "last_timestamp": 146402,
+            "total_duration": 10168877,
+            "status": false
+        },
+        "YOU S03 04.mp4": {
+            "last_timestamp": 116150,
+            "total_duration": 2735316,
+            "status": false
+        },
+        "YOU S03 07.mp4": {
+            "last_timestamp": 62151,
+            "total_duration": 2993074,
+            "status": false
+        }
+    },
+    "file_meta": {
+        "d:\\multimedia\\serie tv\\you\\stagione 5\\you.s5.e1.1080p.mp4": {
+            "kind": "serie",
+            "series": "You"
+        }
+    },
+    "covers": {
+        "film|salvate il soldato ryan": "C:\\Users\\Andrea\\Desktop\\Video_test\\covers\\film-salvate-il-soldato-ryan-1c1f4ca8.jpg",
+        "serie|you": "C:\\Users\\Andrea\\Desktop\\Video_test\\covers\\serie-you-9e709d1e.jpg"
+    },
+    "online": {
+        "saved_links": [
+            {
+                "id": "2564ff1caf5544dcbd2cb13fd428fd16",
+                "title": "testSTREAM",
+                "url": "https://streaming-community.biz/titles/27037-terminal-list-streaming/watching",
+                "kind": "auto",
+                "source_url": "",
+                "referer": "",
+                "user_agent": ""
+            }
+        ]
+    }
+}

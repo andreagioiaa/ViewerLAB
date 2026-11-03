@@ -1,0 +1,20 @@
+{
+  "id": "example",
+  "name": "Canale Demo (fittizio)",
+  "domain": "https://example.invalid",
+  "search_url": "https://example.invalid/search?q={query}",
+  "headers": {
+    "Accept-Language": "it-IT,it;q=0.9,en;q=0.7"
+  },
+  "selectors": {
+    "item_card": "article.result",
+    "title": "h2 a",
+    "url": "h2 a",
+    "cover": "img.poster"
+  },
+  "detail_selectors": {
+    "embed_links": "iframe[src], a.embed-link[href]"
+  },
+  "enabled": true,
+  "priority": 100
+}
