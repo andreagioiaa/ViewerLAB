@@ -1,0 +1,5 @@
+PySide6>=6.6
+httpx>=0.27
+
+# Solo per creare l'eseguibile (con Python 3.14 serve PyInstaller >= 6.16):
+# pyinstaller>=6.16

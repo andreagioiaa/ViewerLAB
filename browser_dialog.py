@@ -79,9 +79,14 @@ class WebBrowserDialog(QDialog):
         self._closing = False
         self._socket_buffer = ""
         self._stderr_buffer = ""
+        self._load_failed = False
         self._process: QProcess | None = None
         self._server: QTcpServer | None = None
         self._socket: QTcpSocket | None = None
+        self._load_timer = QTimer(self)
+        self._load_timer.setSingleShot(True)
+        self._load_timer.setInterval(30000)
+        self._load_timer.timeout.connect(self._on_load_timeout)
 
         self.setWindowTitle("Browser · VistoFlow Pro")
         self.resize(980, 700)
@@ -151,6 +156,20 @@ class WebBrowserDialog(QDialog):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         self.progress.hide()
+
+        self.error_banner = QLabel("")
+        self.error_banner.setObjectName("BrowserErrorBanner")
+        self.error_banner.setWordWrap(True)
+        self.error_banner.setStyleSheet(
+            "QLabel#BrowserErrorBanner {"
+            " background: #3a1d1d;"
+            " color: #ffb4b4;"
+            " border: 1px solid #7a2b2b;"
+            " border-radius: 6px;"
+            " padding: 8px;"
+            "}"
+        )
+        self.error_banner.hide()
 
         # Banner di notifica per flussi .m3u8 intercettati con Referer
         self.stream_banner = QFrame()
@@ -223,6 +242,7 @@ class WebBrowserDialog(QDialog):
         layout.setSpacing(7)
         layout.addLayout(toolbar)
         layout.addWidget(self.progress)
+        layout.addWidget(self.error_banner)
         layout.addWidget(self.stream_banner)
         layout.addWidget(self.view_container, 1)
         layout.addWidget(self.status_label)
@@ -301,6 +321,7 @@ class WebBrowserDialog(QDialog):
                 self._started_url,
             ]
         process.start(sys.executable, arguments)
+        self._start_load_timer()
 
     def _on_new_connection(self):
         if self._server is None:
@@ -340,14 +361,14 @@ class WebBrowserDialog(QDialog):
         if self._closing:
             return
         if self._helper_ready:
-            self.status_label.setText(
+            self._show_load_error(
                 "Browser disconnesso. Chiudi e riapri la finestra per continuare."
             )
 
     def _on_socket_error(self, _error):
         if self._closing:
             return
-        self.status_label.setText("Errore di comunicazione con il browser.")
+        self._show_load_error("Errore di comunicazione con il browser.")
 
     def _read_stderr(self):
         if self._process is None:
@@ -378,6 +399,10 @@ class WebBrowserDialog(QDialog):
             except (TypeError, ValueError):
                 value = 0
             self._on_load_progress(value)
+        elif event == "load_started":
+            self._on_load_started()
+        elif event == "load_error":
+            self._on_load_error(str(message.get("error") or ""))
         elif event == "load":
             self._on_load_finished(bool(message.get("ok")))
         elif event == "stream_captured":
@@ -434,7 +459,8 @@ class WebBrowserDialog(QDialog):
         ]
         self._set_navigation_enabled(True)
         self._resize_helper()
-        self.status_label.setText("Browser pronto.")
+        if not self._load_failed:
+            self.status_label.setText("Browser pronto.")
         if self._pending_url and self._pending_url != self._started_url:
             self._send({"action": "load", "url": self._pending_url})
         self._pending_url = ""
@@ -459,6 +485,8 @@ class WebBrowserDialog(QDialog):
         )
 
     def _show_helper_error(self, message: str):
+        self._stop_load_timer()
+        self.progress.hide()
         self.notice.setText(
             f"{message}\n\n"
             "Puoi comunque usare il pulsante «Apri nel browser» qui sopra."
@@ -485,7 +513,7 @@ class WebBrowserDialog(QDialog):
             suffix = f"\n\nUltimo messaggio:\n{detail[-1]}" if detail else ""
             self._show_helper_error("Il browser integrato si è chiuso." + suffix)
         else:
-            self.status_label.setText(
+            self._show_load_error(
                 "Il browser integrato si è chiuso. Riapri la finestra per continuare."
             )
 
@@ -493,6 +521,7 @@ class WebBrowserDialog(QDialog):
         if self._closing:
             return
         self._closing = True
+        self._stop_load_timer()
         if self._socket is not None:
             self._send({"action": "quit"})
             try:
@@ -559,6 +588,7 @@ class WebBrowserDialog(QDialog):
 
     def _load_engine(self, url: str):
         self._pending_url = url
+        self._start_load_timer()
         if self._helper_ready and self._send({"action": "load", "url": url}):
             self._pending_url = ""
         elif self._process is not None:
@@ -664,6 +694,46 @@ class WebBrowserDialog(QDialog):
             else "Browser · VistoFlow Pro"
         )
 
+    def _start_load_timer(self):
+        self._load_failed = False
+        self.error_banner.hide()
+        self._load_timer.start()
+
+    def _stop_load_timer(self):
+        self._load_timer.stop()
+
+    def _show_load_error(self, message: str):
+        self._load_failed = True
+        self._load_timer.stop()
+        self.progress.hide()
+        self.error_banner.setText(
+            f"{message}\n"
+            "Il sito potrebbe bloccare il browser integrato. "
+            "Riprova con ⟳ oppure usa «Apri nel browser»."
+        )
+        self.error_banner.show()
+        self.status_label.setText(message)
+
+    def _on_load_started(self):
+        self._start_load_timer()
+        self.progress.setValue(0)
+        self.progress.show()
+        self.status_label.setText("Caricamento della pagina…")
+
+    def _on_load_timeout(self):
+        if not self._helper_ready:
+            return
+        self._show_load_error(
+            "Caricamento non completato dopo 30 secondi."
+        )
+
+    def _on_load_error(self, reason: str):
+        message = "La pagina non è stata caricata."
+        reason = (reason or "").strip()
+        if reason:
+            message += f" Dettaglio: {reason}"
+        self._show_load_error(message)
+
     def _on_load_progress(self, value: int):
         if 0 < value < 100:
             self.progress.show()
@@ -672,14 +742,14 @@ class WebBrowserDialog(QDialog):
             self.progress.hide()
 
     def _on_load_finished(self, ok: bool):
+        self._stop_load_timer()
         self.progress.hide()
         if ok:
+            self._load_failed = False
+            self.error_banner.hide()
             self.status_label.setText("Caricamento completato.")
-        else:
-            self.status_label.setText(
-                "La pagina non è stata caricata. Il sito potrebbe bloccare il "
-                "browser integrato o richiedere un browser esterno."
-            )
+        elif not self._load_failed:
+            self._show_load_error("La pagina non è stata caricata.")
 
     def _copy_url(self):
         text = self.url_edit.text().strip() or self._current_url

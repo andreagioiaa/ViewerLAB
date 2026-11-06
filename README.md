@@ -68,9 +68,9 @@ resolver → player VLC) gira dentro VistoFlow.
 - Il browser resta sulla stessa pagina e blocca popup, finestre secondarie e
   nuove tab. Non estrae il flusso per VLC e non aggira Cloudflare, CAPTCHA,
   paywall, login o DRM.
-- Se il sito non carica nel browser integrato, usa **Apri nel browser** per
-  passare a Chrome/Edge/Firefox. Il mancato caricamento non è un errore del
-  link salvato.
+- Se il sito non carica nel browser integrato, VistoFlow mostra un errore
+  esplicito (incluso il dettaglio di rete) invece di lasciare il caricamento
+  sospeso. Usa **Apri nel browser** per passare a Chrome/Edge/Firefox.
 
 ### Libreria film / serie
 - La barra laterale divide automaticamente **🎬 FILM** e **📺 SERIE**.

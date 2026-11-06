@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; media-src https: http:">
+    <title>ViewerLAB — prototipo</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app">
+        <header class="app-header">
+            <div>
+                <p class="eyebrow">prototipo clean-room</p>
+                <h1>ViewerLAB</h1>
+                <p class="subtitle">Electron + mpv su named pipe + proxy HLS locale opzionale.</p>
+            </div>
+            <div class="status-cluster">
+                <span class="pill" id="mpv-pill">mpv: …</span>
+                <span class="pill" id="proxy-pill">proxy: off</span>
+                <span class="pill" id="player-pill">player: chiuso</span>
+            </div>
+        </header>
+
+        <main class="layout">
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>Stream di test pubblici</h2>
+                    <button class="button ghost" id="close-player">Chiudi player</button>
+                </div>
+                <p class="hint">
+                    Solo flussi pubblici di prova. Il pulsante “via proxy” instrada manifest e
+                    segmenti attraverso il server loopback di questo prototipo.
+                </p>
+
+                <div class="cards">
+                    <article class="card" data-stream="hls">
+                        <div class="card-top">
+                            <span class="tag">HLS</span>
+                            <h3>Mux test stream</h3>
+                        </div>
+                        <p class="url">test-streams.mux.dev/x36xhzz/x36xhzz.m3u8</p>
+                        <div class="card-actions">
+                            <button class="button" data-play="direct">mpv diretto</button>
+                            <button class="button accent" data-play="proxy">mpv via proxy</button>
+                        </div>
+                    </article>
+
+                    <article class="card" data-stream="mp4">
+                        <div class="card-top">
+                            <span class="tag">MP4</span>
+                            <h3>Sintel trailer</h3>
+                        </div>
+                        <p class="url">media.w3.org/2010/05/sintel/trailer.mp4</p>
+                        <div class="card-actions">
+                            <button class="button" data-play="direct">mpv diretto</button>
+                            <button class="button accent" data-play="proxy">mpv via proxy</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="form-row">
+                    <label>
+                        Referer (opzionale)
+                        <input type="text" id="referer" placeholder="https://example.com/">
+                    </label>
+                    <label>
+                        User-Agent (opzionale)
+                        <input type="text" id="user-agent" placeholder="default del prototipo">
+                    </label>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <h2>Proxy HLS</h2>
+                    <div class="inline-actions">
+                        <button class="button" id="start-proxy">Avvia</button>
+                        <button class="button ghost" id="stop-proxy">Ferma</button>
+                    </div>
+                </div>
+                <p class="hint">
+                    Bind esclusivo su 127.0.0.1, percorso segreto casuale, Range passthrough,
+                    rewriting degli URI nei manifest. I target privati sono bloccati salvo
+                    <code>VIEWERLAB_ALLOW_PRIVATE=1</code>.
+                </p>
+                <dl class="facts">
+                    <div><dt>Base URL</dt><dd id="proxy-base">—</dd></div>
+                    <div><dt>Ambiente</dt><dd id="env-info">—</dd></div>
+                    <div><dt>mpv</dt><dd id="mpv-info">—</dd></div>
+                </dl>
+            </section>
+
+            <section class="panel log-panel">
+                <div class="panel-head">
+                    <h2>Eventi</h2>
+                    <button class="button ghost" id="clear-log">Pulisci</button>
+                </div>
+                <ol class="log" id="log"></ol>
+            </section>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

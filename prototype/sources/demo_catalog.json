@@ -1,0 +1,63 @@
+{
+  "name": "Demo — contenuti pubblici",
+  "description": "Catalogo di prova con filmati pubblici o open source. Nessun contenuto protetto da DRM.",
+  "license_note": "I titoli appartengono ai rispettivi autori ed erano pubblicati con licenze aperte o come campioni tecnici pubblici.",
+  "items": [
+    {
+      "title": "Sintel",
+      "year": 2010,
+      "kind": "mp4",
+      "url": "https://download.blender.org/durian/trailer/sintel_trailer-720p.mp4",
+      "page": "https://durian.blender.org/",
+      "description": "Trailer del cortometraggio open movie della Blender Foundation."
+    },
+    {
+      "title": "Sintel (full)",
+      "year": 2010,
+      "kind": "mp4",
+      "url": "https://archive.org/download/Sintel/sintel-2048-surround.mp4",
+      "page": "https://archive.org/details/Sintel",
+      "description": "Versione completa pubblicata su Internet Archive con licenza Creative Commons."
+    },
+    {
+      "title": "Big Buck Bunny",
+      "year": 2008,
+      "kind": "mp4",
+      "url": "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/720/Big_Buck_Bunny_720_10s_1MB.mp4",
+      "page": "https://test-videos.co.uk/bigbuckbunny/mp4-h264",
+      "description": "Clip di test pubblica del cortometraggio open movie della Blender Foundation."
+    },
+    {
+      "title": "Big Buck Bunny (full)",
+      "year": 2008,
+      "kind": "mp4",
+      "url": "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4",
+      "page": "https://archive.org/details/BigBuckBunny_124",
+      "description": "Versione completa 720p pubblicata su Internet Archive con licenza Creative Commons."
+    },
+    {
+      "title": "Elephants Dream",
+      "year": 2006,
+      "kind": "mp4",
+      "url": "https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4",
+      "page": "https://archive.org/details/ElephantsDream",
+      "description": "Primo open movie della Blender Foundation, pubblicato con licenza Creative Commons."
+    },
+    {
+      "title": "Mux HLS Test",
+      "year": 2016,
+      "kind": "hls",
+      "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      "page": "https://test-streams.mux.dev/",
+      "description": "Flusso HLS pubblico usato per test di player e manifest."
+    },
+    {
+      "title": "Apple BipBop HLS",
+      "year": 2016,
+      "kind": "hls",
+      "url": "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8",
+      "page": "https://developer.apple.com/streaming/examples/",
+      "description": "Esempio HLS pubblico fornito da Apple per test di streaming."
+    }
+  ]
+}

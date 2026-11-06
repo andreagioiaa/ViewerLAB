@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+    <title>ViewerLAB Player</title>
+    <link rel="stylesheet" href="player-overlay.css">
+</head>
+<body>
+    <div class="overlay" id="overlay">
+        <header class="top-bar">
+            <span class="badge">mpv</span>
+            <h1 class="title" id="title">ViewerLAB</h1>
+            <button class="icon-button" id="close-button" title="Chiudi (Esc)" aria-label="Chiudi">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+            </button>
+        </header>
+
+        <div class="spinner" id="spinner" hidden aria-label="Caricamento">
+            <div class="spinner-ring"></div>
+        </div>
+
+        <footer class="controls" id="controls">
+            <button class="icon-button" id="back-button" title="Indietro 10s (←)" aria-label="Indietro 10 secondi">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M11 6L5 12l6 6M19 6l-6 6 6 6" />
+                </svg>
+            </button>
+
+            <button class="icon-button primary" id="play-button" title="Play/Pausa (Spazio)" aria-label="Play o pausa">
+                <svg id="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 5v14l11-7z" />
+                </svg>
+                <svg id="pause-icon" viewBox="0 0 24 24" aria-hidden="true" hidden>
+                    <path d="M7 5h4v14H7zM13 5h4v14h-4z" />
+                </svg>
+            </button>
+
+            <button class="icon-button" id="forward-button" title="Avanti 10s (→)" aria-label="Avanti 10 secondi">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M13 6l6 6-6 6M5 6l6 6-6 6" />
+                </svg>
+            </button>
+
+            <span class="time" id="current-time">0:00</span>
+
+            <input class="timeline" id="timeline" type="range" min="0" max="1000" value="0" step="1"
+                   aria-label="Posizione di riproduzione">
+
+            <span class="time" id="duration">0:00</span>
+
+            <span class="meta" id="meta"></span>
+        </footer>
+    </div>
+
+    <script src="player-overlay.js"></script>
+</body>
+</html>

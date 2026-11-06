@@ -30,6 +30,7 @@ import threading
 
 from PySide6.QtCore import QObject, QUrl, Qt, Signal
 from PySide6.QtWebEngineCore import (
+    QWebEngineLoadingInfo,
     QWebEnginePage,
     QWebEngineScript,
     QWebEngineSettings,
@@ -230,6 +231,22 @@ def main() -> int:
     page = _BrowserPage(view)
     view.setPage(page)
     window.setCentralWidget(view)
+
+    view.loadStarted.connect(
+        lambda: transport.send({"event": "load_started"})
+    )
+
+    def on_loading_changed(info) -> None:
+        if info.status() == QWebEngineLoadingInfo.LoadStatus.LoadFailedStatus:
+            transport.send(
+                {
+                    "event": "load_error",
+                    "url": info.url().toString(),
+                    "error": info.errorString(),
+                }
+            )
+
+    page.loadingChanged.connect(on_loading_changed)
 
     # Configura impostazioni ottimali per i player web
     settings = page.settings()

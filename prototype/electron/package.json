@@ -1,0 +1,16 @@
+{
+  "name": "viewerlab-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Clean-room Electron + mpv + local HLS proxy shell inspired by the Veezie.st desktop architecture",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging",
+    "check": "node --check main.js && node --check mpv-manager.js && node --check hls-proxy.js && node --check preload.js && node --check player-preload.js && node --check player-overlay.js && node --check www/app.js && node --check scripts/smoke-proxy.js",
+    "smoke": "node scripts/smoke-proxy.js"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
