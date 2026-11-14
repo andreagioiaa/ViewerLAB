@@ -126,6 +126,36 @@
   </div>
 </div>
 
+<!-- ── Watch Modal ────────────────────────────────────────────────────
+     "Guarda" asks one thing first: stream only, or stream while the same
+     title downloads into the library. -->
+<div class="modal modal-blur fade" id="sc-watch-modal" tabindex="-1" style="display:none" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:420px">
+    <div class="modal-content">
+      <div class="modal-body" style="padding:24px 24px 12px">
+        <p style="font-size:15px;font-weight:600;margin-bottom:4px;color:var(--text)">
+          <i class="ti ti-player-play me-1"></i>Guarda
+        </p>
+        <p id="sc-watch-title" style="font-size:13px;margin-bottom:16px;color:var(--text-muted)"></p>
+        <label class="form-check form-switch mb-1">
+          <input class="form-check-input" type="checkbox" id="sc-watch-download">
+          <span class="form-check-label">Guarda e scarica</span>
+        </label>
+        <div class="form-text">
+          Lo scarica in libreria mentre lo guardi in streaming; lo streaming continua
+          finch&eacute; il download non &egrave; finito. Spento: solo streaming, nulla su disco.
+        </div>
+      </div>
+      <div class="modal-footer justify-content-end border-0" style="padding:12px 24px 22px;gap:10px">
+        <button type="button" class="btn btn-secondary" id="sc-watch-cancel">Annulla</button>
+        <button type="button" class="btn btn-primary" id="sc-watch-ok">
+          <i class="ti ti-player-play me-1"></i>Guarda
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Prompt Modal ───────────────────────────────────────────────────── -->
 <div class="modal modal-blur fade" id="sc-prompt-modal" tabindex="-1" style="display:none" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:420px">

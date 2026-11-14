@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QCursor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -33,9 +33,16 @@ def _format_time(milliseconds: float) -> str:
 
 
 class VideoSurface(QFrame):
-    """Widget nativo in cui mpv disegna il video tramite HWND."""
+    """Widget nativo in cui mpv disegna il video tramite HWND.
 
+    mpv incorporato con --wid disattiva la propria finestra, quindi il mouse vero
+    arriva qui e non a mpv: clic, movimento e rotella si gestiscono in Qt.
+    """
+
+    clicked = Signal()
     double_clicked = Signal()
+    moved = Signal()
+    wheeled = Signal(int)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -46,6 +53,8 @@ class VideoSurface(QFrame):
         self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         self.setMinimumHeight(240)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMouseTracking(True)
+        self._last_cursor = QCursor.pos()
         self._placeholder = QLabel(_("Nessun flusso in riproduzione"), self)
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet("color: #6b7280; font-size: 13px; background: transparent;")
@@ -59,9 +68,27 @@ class VideoSurface(QFrame):
             self._placeholder.setText(text)
         self._placeholder.setVisible(visible)
 
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - API Qt
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802 - API Qt
         self.double_clicked.emit()
         super().mouseDoubleClickEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802 - API Qt
+        # Solo se il puntatore si è spostato davvero: mostrare/nascondere i comandi
+        # ridimensiona il video e Windows rimanda un movimento fittizio.
+        position = QCursor.pos()
+        if position != self._last_cursor:
+            self._last_cursor = position
+            self.moved.emit()
+        super().mouseMoveEvent(event)
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 - API Qt
+        self.wheeled.emit(event.angleDelta().y())
+        event.accept()
 
 
 class ClickSlider(QSlider):
@@ -96,7 +123,11 @@ class PlayerPanel(QWidget):
         self._active = False
 
         self.video = VideoSurface()
-        self.video.double_clicked.connect(self.fullscreen_requested)
+        self.video.clicked.connect(self.take_focus)  # la tastiera resta al player
+        self.video.moved.connect(self.reveal_controls)
+        self.video.wheeled.connect(
+            lambda delta: self.volume_slider.setValue(self.volume_slider.value() + (5 if delta > 0 else -5))
+        )
 
         self.title_label = QLabel(_("Player"))
         self.title_label.setStyleSheet("color: #dbe2ee; font-weight: 600;")
@@ -167,12 +198,23 @@ class PlayerPanel(QWidget):
         controls.addWidget(self.volume_slider)
         controls.addWidget(self.fullscreen_button)
 
+        # In contenitori propri: a schermo intero spariscono e resta solo il video.
+        self._header = QWidget()
+        self._header.setLayout(header)
+        self._controls = QWidget()
+        self._controls.setLayout(controls)
+        self._immersive = False
+        self._hide_timer = QTimer(self)
+        self._hide_timer.setSingleShot(True)
+        self._hide_timer.setInterval(3000)
+        self._hide_timer.timeout.connect(self._hide_controls)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        layout.addLayout(header)
+        layout.addWidget(self._header)
         layout.addWidget(self.video, 1)
-        layout.addLayout(controls)
+        layout.addWidget(self._controls)
 
         # Tastiera: valgono finché il fuoco è nel pannello (vedi take_focus()).
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -194,6 +236,34 @@ class PlayerPanel(QWidget):
             self.pause_requested.emit()  # alterna pausa / ripresa del flusso caricato
         else:
             self.play_requested.emit()
+
+    def set_immersive(self, immersive: bool) -> None:
+        """Schermo intero: solo il video; i controlli tornano muovendo il mouse."""
+        self._immersive = immersive
+        self._header.setVisible(not immersive)
+        self._controls.setVisible(not immersive)
+        self.layout().setSpacing(0 if immersive else 6)
+        if immersive:
+            self._hide_timer.start()  # nasconde il cursore se il mouse resta fermo
+        else:
+            self._hide_timer.stop()
+            self.video.unsetCursor()
+
+    def reveal_controls(self) -> None:
+        if not self._immersive:
+            return
+        self.video.unsetCursor()
+        self._controls.show()
+        self._hide_timer.start()
+
+    def _hide_controls(self) -> None:
+        if not self._immersive:
+            return
+        if self._controls.underMouse():  # il mouse è sui comandi: aspetta
+            self._hide_timer.start()
+            return
+        self._controls.hide()
+        self.video.setCursor(Qt.CursorShape.BlankCursor)  # mouse fermo: sparisce
 
     def take_focus(self) -> None:
         """Porta la tastiera sul player (il fuoco può essere rimasto su un'altra pagina)."""

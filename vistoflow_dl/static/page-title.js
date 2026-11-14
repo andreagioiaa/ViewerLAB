@@ -749,8 +749,9 @@ let _epCtx = {};
 
 
 
-async function startEpisodeDownload(epIndex) {
-  const { tvId, tvName, slug, year, scheduledAt, token, episodes, currentSeason, audioLangs, subLangs, poster } = _epCtx;
+async function startEpisodeDownload(epIndex, now = false) {
+  const { tvId, tvName, slug, year, token, episodes, currentSeason, audioLangs, subLangs, poster } = _epCtx;
+  const scheduledAt = now ? null : _epCtx.scheduledAt;
   const ep = episodes[epIndex];
   const label = `${tvName} S${String(currentSeason).padStart(2,'0')}E${String(ep.n).padStart(2,'0')}`;
 
@@ -848,8 +849,9 @@ async function downloadWholeSeries() {
 // ── Anime Browser (AnimeUnity) ─────────────────────────────────────────────────
 
 
-async function startAnimeDownload(epIndex) {
-  const { animeId, animeName, animeType, animeYear, scheduledAt, episodes, audioLangs, subLangs } = _animeCtx;
+async function startAnimeDownload(epIndex, now = false) {
+  const { animeId, animeName, animeType, animeYear, episodes, audioLangs, subLangs } = _animeCtx;
+  const scheduledAt = now ? null : _animeCtx.scheduledAt;
   const episode = episodes[epIndex];
   const label = `${animeName} E${episode.number}`;
 
@@ -898,6 +900,26 @@ async function downloadAllAnime() {
 // The panel resolves the stream and hands it to VistoFlow's player, in the same
 // process: nothing is written to disk, and it works from an external browser too.
 
+// Resolves null on cancel, otherwise { download } from the "Guarda e scarica" switch.
+function _tpWatchChoice(title) {
+  return new Promise(resolve => {
+    document.getElementById('sc-watch-title').textContent = title;
+    const toggle = document.getElementById('sc-watch-download');
+    toggle.checked = false;
+    const ok = document.getElementById('sc-watch-ok');
+    const cancel = document.getElementById('sc-watch-cancel');
+    function cleanup() {
+      ok.removeEventListener('click', onOk);
+      cancel.removeEventListener('click', onCancel);
+    }
+    function onOk()     { cleanup(); hideModal('sc-watch-modal'); resolve({ download: toggle.checked }); }
+    function onCancel() { cleanup(); hideModal('sc-watch-modal'); resolve(null); }
+    ok.addEventListener('click', onOk, { once: true });
+    cancel.addEventListener('click', onCancel, { once: true });
+    showModal('sc-watch-modal');
+  });
+}
+
 async function tpWatch(index) {
   let url, title;
   if (_tp.type === 'movie') {
@@ -912,6 +934,18 @@ async function tpWatch(index) {
     const ep = episodes[index];
     url = `/api/stream/tv/${tvId}/episode/${ep.id}`;
     title = `${tvName} S${String(currentSeason).padStart(2, '0')}E${String(ep.n).padStart(2, '0')}`;
+  }
+  const choice = await _tpWatchChoice(title);
+  if (!choice) return;
+  if (choice.download) {
+    // Now, whatever the schedule field says: the point is to keep it while watching.
+    if (_tp.type === 'movie') {
+      startFilmDownload(_tp.id, _tp.name, _tp.year, null, _tpPicked('audio'), _tpPicked('subs'), _tp.poster);
+    } else if (_tp.type === 'anime') {
+      startAnimeDownload(index, true);
+    } else {
+      startEpisodeDownload(index, true);
+    }
   }
   showToast(`Avvio dello streaming: ${title}`, 'info');
   try {

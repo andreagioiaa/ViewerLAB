@@ -360,6 +360,12 @@ class MainWindow(QMainWindow):
 
         self._stream_bridge = _StreamBridge(self)
         self._stream_bridge.play.connect(self._play_download_stream)
+        # Un clic mette in pausa, ma solo se non è l'inizio di un doppio clic.
+        self._click_timer = QTimer(self)
+        self._click_timer.setSingleShot(True)
+        self._click_timer.setInterval(250)
+        self._click_timer.timeout.connect(self._toggle_pause)
+        self._clicks_muted_until = 0.0
         dl_stream.set_player(self._stream_bridge.play.emit)  # emesso dal thread del server
         if not smoke_test:
             self._download_server.start()
@@ -705,6 +711,8 @@ class MainWindow(QMainWindow):
         self.player_panel.skip_requested.connect(self._skip)
         self.player_panel.volume_changed.connect(self._set_volume)
         self.player_panel.fullscreen_requested.connect(self._toggle_fullscreen)
+        self.player_panel.video.clicked.connect(self._on_video_click)
+        self.player_panel.video.double_clicked.connect(self._on_video_double_click)
         box.addWidget(self.player_panel)
         return page
 
@@ -1509,11 +1517,25 @@ class MainWindow(QMainWindow):
             self.showNormal()
             self.rail.show()
             self.statusBar().show()
+            self.player_panel.set_immersive(False)
         else:
             self.rail.hide()
             self.statusBar().hide()
             self._go(self.PAGE_PLAYER)
+            self.player_panel.set_immersive(True)
             self.showFullScreen()
+
+    def _on_video_click(self) -> None:
+        """Un clic sul video mette in pausa, se non è l'inizio di un doppio clic."""
+        if self._click_timer.isActive() or time.monotonic() < self._clicks_muted_until:
+            self._click_timer.stop()
+        else:
+            self._click_timer.start()
+
+    def _on_video_double_click(self) -> None:
+        self._click_timer.stop()
+        self._clicks_muted_until = time.monotonic() + 0.4
+        self._toggle_fullscreen()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - API Qt
         if event.key() == Qt.Key.Key_Escape and self.isFullScreen():
