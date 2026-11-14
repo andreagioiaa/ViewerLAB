@@ -7,3 +7,13 @@ build/
 *.spec
 .pytest_cache/
 .ruff_cache/
+
+# dati utente della libreria locale (restano accanto all'app)
+visto_settings.json
+covers/
+# binari esterni
+bin/*.exe
+bin/*.dll
+data/
+covers/film-salvate-il-soldato-ryan-1c1f4ca8.jpg
+covers/serie-you-9e709d1e.jpg

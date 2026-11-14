@@ -1,0 +1,998 @@
+import asyncio
+import logging
+import os
+import shutil
+import threading
+import uuid
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from vistoflow_dl.config import VIDEOS_DIR, TMP_DIR, get_settings
+from vistoflow_dl.progress import DownloadCancelledError, WebProgressBar
+
+
+def _get_library_path(type_: str) -> str:
+    """Return the configured library path for content type, or VIDEOS_DIR as fallback."""
+    from vistoflow_dl.routers.domain import _read_data
+    for lib in _read_data().get("libraries", []):
+        if lib.get("type") == type_:
+            return lib["path"]
+    return str(VIDEOS_DIR)
+
+def _library_roots() -> list[str]:
+    from vistoflow_dl.routers.domain import _read_data
+    roots = [lib["path"] for lib in _read_data().get("libraries", []) if lib.get("path")]
+    return [os.path.realpath(p) for p in (*roots, str(VIDEOS_DIR))]
+
+
+def _inside(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([path, root]) == root
+    except ValueError:  # another drive, on Windows
+        return False
+
+
+def remove_download_output(path: str) -> list[str]:
+    """Delete a finished download from the library: the video, the subtitles
+    beside it ({stem}.{lang}.vtt), then every folder it leaves empty.
+
+    Only inside a configured library, and never the library root itself - the
+    path comes from a job, but what it points at is a person's library. A
+    folder that still holds anything (the series' other episodes) stays.
+    Returns what was removed.
+    """
+    roots = _library_roots()
+    video = os.path.realpath(path)
+    if not any(_inside(video, r) and video != r for r in roots):
+        logger.warning("Not removing %s: outside every library", path)
+        return []
+
+    folder, name = os.path.split(video)
+    stem = os.path.splitext(name)[0]
+    try:
+        siblings = [os.path.join(folder, f) for f in os.listdir(folder)
+                    if f.startswith(stem + ".") and f.endswith(".vtt")]
+    except OSError:
+        siblings = []
+    removed = []
+    for target in (video, *siblings):
+        try:
+            os.remove(target)
+            removed.append(target)
+        except OSError:
+            pass
+
+    while folder not in roots and any(_inside(folder, r) for r in roots):
+        try:
+            os.rmdir(folder)  # fails on a folder not empty, which is the point
+        except OSError:
+            break
+        removed.append(folder)
+        folder = os.path.dirname(folder)
+    for target in removed:
+        logger.info("Removed with its cancelled batch: %s", target)
+    return removed
+
+
+def _schedule_external_id(params: dict) -> Optional[str]:
+    """The source id a scheduled entry's params carry, whatever its type."""
+    value = params.get("id") or params.get("tv_id") or params.get("anime_id")
+    return str(value) if value not in (None, "") else None
+
+
+logger = logging.getLogger(__name__)
+
+SCHEDULER_INTERVAL = 30  # seconds
+
+# A failed download is run again this many times, this long after each failure,
+# before it is shown as failed. The source refuses a request now and then and
+# serves the same one a minute later; a configuration mistake just fails fast
+# three more times, which costs nothing.
+AUTO_RETRIES = 3
+AUTO_RETRY_DELAY = 60  # seconds
+
+
+@dataclass
+class DownloadJob:
+    job_id: str
+    title: str
+    type: str  # "film" | "episode" | "anime"
+    status: str  # "scheduled" | "queued" | "paused" | "running" | "done" | "error" | "cancelled"
+    created_at: datetime
+    scheduled_at: Optional[datetime] = None
+    schedule_id: Optional[str] = None
+    error: Optional[str] = None
+    output_path: Optional[str] = None
+    progress: dict = field(default_factory=lambda: {
+        "current": 0, "total": 0, "pct": 0, "speed": 0, "eta": None,
+        "bytes_done": 0, "bytes_total": None, "bytes_total_estimated": True,
+    })
+    phases: list = field(default_factory=list)
+    progress_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    cancel_event: threading.Event = field(default_factory=threading.Event)
+
+    # Set when this job is one episode of a season or series asked for in one go,
+    # so the notification can be a single summary instead of one per episode.
+    batch_id: Optional[str] = None
+    batch_kind: Optional[str] = None    # "season" | "series" | "anime_all"
+    batch_label: Optional[str] = None   # computed once at submit, e.g. "Serie — Stagione 2"
+
+    # Who asked for it. None in open mode, where there is no account to notify.
+    user_id: Optional[int] = None
+
+    # Kept as separate fields rather than parsed back out of `title`, which is
+    # already a composed string ("Nome Serie S02E05") and would misparse the
+    # first time a title itself contains something like S01.
+    media_label: Optional[str] = None
+    year: Optional[str] = None
+    season: Optional[int] = None
+    episode_number: Optional[str] = None
+    # The title's id at its source (film id, series id, AnimeUnity id). What
+    # the library registry files the finished download under, so the title can
+    # be found again whatever its folder ends up being called.
+    external_id: Optional[str] = None
+
+    # What was handed to the executor, minus the arguments bound to this job
+    # object (_JOB_BOUND_KWARGS). Kept so a failed job can be run again without
+    # the client re-sending anything — the domain and the requester's identity
+    # must not come from a request body.
+    call: Optional[tuple] = field(default=None, repr=False)
+
+    # Automatic retries used so far, and when the next one starts (None when
+    # none is pending). The job keeps its id and stays non-terminal throughout:
+    # listeners hear about it once, when it is finally done or failed.
+    retries: int = 0
+    retry_at: Optional[datetime] = None
+    # Its ticket while it waits for a download slot (None otherwise): the
+    # waiting jobs start in ticket order, so the frontend can number the line.
+    queue_seq: Optional[int] = None
+    # Held back with the rest of its batch (#43). A paused job gives up its
+    # place in the line *and its executor thread*: ``parked`` keeps the exact
+    # call, so resuming resubmits it. Only a job that has not started is ever
+    # paused - one mid-download would come back to an expired stream token.
+    paused: bool = False
+    parked: Optional[tuple] = field(default=None, repr=False)
+    # Cancelled with its batch and its files with it: a download that finishes
+    # in the instant after the cancel removes what it just wrote.
+    purge: bool = False
+
+
+# Rebuilt for every attempt: each belongs to one job id.
+_JOB_BOUND_KWARGS = ("temp_dir", "progress_factory", "cancel_event")
+
+
+def _worth_retrying(exc: Exception) -> bool:
+    """Everything but what no retry can fix.
+
+    A missing audio track waits for a person to choose, and on the request path
+    parks the request. A permission error is a deployment problem (#28): the
+    same uid meets the same mode bits a minute later. Only on POSIX, though —
+    on Windows a sharing violation (a file held open by Jellyfin or an
+    antivirus) is also a PermissionError, carries a ``winerror``, and does go
+    away. Never all of OSError: ``requests.ConnectionError`` is one too.
+    """
+    from vistoflow_dl.core._shared import MissingAudioTrackError
+    if isinstance(exc, MissingAudioTrackError):
+        return False
+    if isinstance(exc, PermissionError) and getattr(exc, "winerror", None) is None:
+        return False
+    return True
+
+
+class DownloadSlots:
+    """At most ``limit`` downloads at once, granted strictly in arrival order.
+
+    Replaces a ``threading.BoundedSemaphore``, which promises nothing about
+    which waiter goes next — so the "In attesa" list could not honestly say
+    what starts next (#26). It also fixes what changing the limit did: the
+    semaphore was *replaced*, leaving every job already waiting on the old one
+    under the old limit while new jobs used the new, so going from 3 to 5 could
+    run 8 at once. Here the limit changes in place, for everyone.
+
+    A waiter leaves the line as soon as its job is cancelled instead of
+    holding its place until a slot frees up.
+    """
+
+    def __init__(self, limit: int):
+        self._cond = threading.Condition()
+        self._limit = limit
+        self._busy = 0
+        self._line: deque = deque()
+        self._tickets = 0
+
+    def acquire(self, job: "DownloadJob", on_queued=None) -> bool:
+        """Wait for a slot. False when the job was cancelled or paused while
+        waiting; the caller tells the two apart."""
+        with self._cond:
+            if job.paused:
+                return False
+            self._tickets += 1
+            job.queue_seq = self._tickets
+            self._line.append(job)
+        if on_queued is not None:
+            on_queued(job)
+        with self._cond:
+            try:
+                while not (self._line[0] is job and self._busy < self._limit):
+                    if job.cancel_event.is_set() or job.paused:
+                        return False
+                    self._cond.wait()
+                if job.cancel_event.is_set() or job.paused:
+                    return False
+                self._busy += 1
+                return True
+            finally:
+                self._line.remove(job)
+                job.queue_seq = None
+                # The next in line may now be at the head with a slot free.
+                self._cond.notify_all()
+
+    def release(self) -> None:
+        with self._cond:
+            self._busy -= 1
+            self._cond.notify_all()
+
+    def resize(self, limit: int) -> None:
+        with self._cond:
+            self._limit = limit
+            self._cond.notify_all()
+
+    def wake(self) -> None:
+        """Let waiters re-check: a cancelled or paused one leaves the line."""
+        with self._cond:
+            self._cond.notify_all()
+
+
+class JobManager:
+    def __init__(self):
+        self._jobs: dict[str, DownloadJob] = {}
+        self._lock = threading.Lock()
+        self._executor = ThreadPoolExecutor(max_workers=64)
+        self._slots = DownloadSlots(get_settings().get("max_concurrent_downloads", 3))
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._subscribers: list[asyncio.Queue] = []
+        self._schedule_store = None  # set via set_schedule_store()
+        self._listeners: list = []
+
+    @staticmethod
+    def _compute_phases(audio_languages: list) -> list:
+        """Return the ordered list of phase names that will be emitted for this job."""
+        steps = ["video", "joining"] + [f"audio_{l}" for l in (audio_languages or ["ita"])] + ["merging", "done"]
+        return steps
+
+    def update_max_concurrent(self, n: int):
+        # In place: running downloads keep their slot, waiting ones get the new
+        # limit too (see DownloadSlots).
+        self._slots.resize(n)
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
+        loop.create_task(self._scheduler_loop())
+
+    def set_schedule_store(self, store):
+        from vistoflow_dl.schedule import ScheduleStore
+        self._schedule_store: Optional[ScheduleStore] = store
+
+    def get(self, job_id: str) -> Optional[DownloadJob]:
+        with self._lock:
+            return self._jobs.get(job_id)
+
+    def list_jobs(self) -> list[dict]:
+        with self._lock:
+            return [self._job_to_dict(j) for j in self._jobs.values()]
+
+    def _job_to_dict(self, job: DownloadJob) -> dict:
+        return {
+            "job_id": job.job_id,
+            "title": job.title,
+            "type": job.type,
+            "status": job.status,
+            "created_at": job.created_at.isoformat(),
+            "scheduled_at": job.scheduled_at.isoformat() if job.scheduled_at else None,
+            "schedule_id": job.schedule_id,
+            "error": job.error,
+            "output_path": job.output_path,
+            "progress": job.progress,
+            "phases": job.phases,
+            # user_id is deliberately absent: the jobs list is readable by anyone
+            # who can download, and the field has no use in the interface.
+            "batch_id": job.batch_id,
+            "batch_kind": job.batch_kind,
+            # Composed once at submit and carried, rather than left to the
+            # client: ``title`` is already a composed string ("Nome Serie
+            # S02E05"), and reparsing a group heading back out of it misreads
+            # the first title that contains something like S01 itself.
+            "batch_label": job.batch_label,
+            "media_label": job.media_label,
+            "season": job.season,
+            "episode_number": job.episode_number,
+            "year": job.year,
+            "retries": job.retries,
+            "queue_seq": job.queue_seq,
+            "max_retries": AUTO_RETRIES,
+            "retry_at": job.retry_at.isoformat() if job.retry_at else None,
+        }
+
+    # ── Global pub/sub ─────────────────────────────────────────────────────────
+
+    def subscribe(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=256)
+        self._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue):
+        try:
+            self._subscribers.remove(q)
+        except ValueError:
+            pass
+
+    def _broadcast(self, event: dict):
+        """Thread-safe push to all global SSE subscribers."""
+        if self._loop:
+            asyncio.run_coroutine_threadsafe(self._fanout(event), self._loop)
+
+    def broadcast(self, event: dict):
+        """Public entry point for other modules pushing to the SSE stream."""
+        self._broadcast(event)
+
+    # ── Terminal-state listeners ───────────────────────────────────────────────
+
+    def add_listener(self, callback):
+        """Register a callback invoked when a job reaches a terminal state.
+
+        Used by the request system to move a request to completed or failed
+        without the job manager knowing that requests exist.
+        """
+        self._listeners.append(callback)
+
+    def _notify_listeners(self, job: "DownloadJob"):
+        for callback in list(self._listeners):
+            try:
+                callback(job)
+            except Exception:
+                logger.exception("Job listener failed for job %s", job.job_id)
+
+    def _emit(self, job: "DownloadJob", event: dict):
+        """Push a terminal/progress event to the job's own queue and to everyone.
+
+        The loop is only set once the app has started; a job finishing before
+        that (or in a test) must not leave an un-awaited coroutine behind.
+        """
+        if self._loop is not None:
+            asyncio.run_coroutine_threadsafe(job.progress_queue.put(event), self._loop)
+        else:
+            logger.debug("No event loop bound; dropping %s for job %s",
+                         event.get("type"), job.job_id)
+        self._broadcast({**event, "job_id": job.job_id})
+
+    async def _fanout(self, event: dict):
+        """Push an event to every subscriber, dropping the oldest under pressure.
+
+        A backgrounded tab, a slow proxy, or a season starting twenty downloads
+        at once can all fill a queue. Dropping the *subscriber* there — which is
+        what used to happen — left the browser holding an open connection nobody
+        would ever write to again: the page looked live and silently stopped
+        updating until it was reloaded. Discarding the oldest event instead
+        costs a stale frame of progress and lets the next one repair the view.
+        """
+        for q in list(self._subscribers):
+            while True:
+                try:
+                    q.put_nowait(event)
+                    break
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        # Drained from under us by its own reader; try again.
+                        continue
+
+    # ── Progress factory ───────────────────────────────────────────────────────
+
+    def _make_progress_factory(self, job: DownloadJob):
+        loop = self._loop
+        manager = self
+        # A bar covers one phase; a job spans several. Kept here because this
+        # closure is the only thing that is per-job and sees every bar.
+        bars: list = []
+
+        def on_event(ev: dict):
+            if ev.get("type") == "progress":
+                job.progress = {
+                    "current": ev["current"],
+                    "total": ev["total"],
+                    "pct": ev["pct"],
+                    "speed": ev.get("speed", 0),
+                    "bytes_speed": ev.get("bytes_speed", 0),
+                    "eta": ev.get("eta"),
+                    "bytes_done": ev.get("bytes_done", 0),
+                    "bytes_total": ev.get("bytes_total"),
+                    "bytes_total_estimated": ev.get("bytes_total_estimated", True),
+                }
+            manager._broadcast({**ev, "job_id": job.job_id})
+
+        def factory(**kwargs):
+            total = kwargs.get("total", 0)
+            phase = kwargs.get("phase")
+            bar = WebProgressBar(total, job.progress_queue, loop, phase=phase, on_event=on_event)
+            # Carry what the earlier phases already downloaded, so the readout
+            # climbs across the whole job instead of restarting at each one.
+            bar.prior_bytes = bars[-1].bytes_done if bars else 0
+            bars.append(bar)
+            return bar
+
+        return factory
+
+    # ── Scheduler loop ─────────────────────────────────────────────────────────
+
+    async def _scheduler_loop(self):
+        while True:
+            await asyncio.sleep(SCHEDULER_INTERVAL)
+            now = datetime.now(timezone.utc)
+            with self._lock:
+                jobs = list(self._jobs.values())
+            for job in jobs:
+                if job.status != "scheduled" or job.scheduled_at is None or job.schedule_id is None:
+                    continue
+                sa = job.scheduled_at
+                if sa.tzinfo is None:
+                    sa = sa.replace(tzinfo=timezone.utc)
+                if sa > now:
+                    continue
+                if self._schedule_store is None:
+                    continue
+                entry = self._schedule_store.get_by_schedule_id(job.schedule_id)
+                if entry is None:
+                    continue
+                logger.info("Scheduler firing job_id=%s schedule_id=%s", job.job_id, job.schedule_id)
+                try:
+                    self._fire_job(job, entry["type"], entry["params"])
+                except Exception as e:
+                    logger.error("Failed to fire scheduled job %s: %s", job.job_id, e)
+
+    def _fire_job(self, job: DownloadJob, type_: str, params: dict):
+        fn, args, kwargs = self._build_call(type_, params, job)
+        with self._lock:
+            job.status = "queued"
+            if self._schedule_store is not None and job.schedule_id:
+                self._schedule_store.mark_fired(job.schedule_id)
+        self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "queued"})
+        self._remember_call(job, fn, args, kwargs)
+        self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+
+    def _build_call(self, type_: str, params: dict, job: DownloadJob):
+        pf = self._make_progress_factory(job)
+        td = str(TMP_DIR / job.job_id)
+        if type_ == "film":
+            from vistoflow_dl.core.film import download_film
+            return download_film, (params["id"], params["title"], params["domain"]), dict(
+                output_dir=_get_library_path("film"), temp_dir=td, progress_factory=pf,
+                year=params.get("year"), cancel_event=job.cancel_event,
+                audio_languages=params.get("audio_languages", ["ita"]),
+                subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
+                tmdb_id=params.get("tmdb_id"),
+            )
+        if type_ == "episode":
+            from vistoflow_dl.core.tv import download_episode
+            return download_episode, (
+                params["tv_id"], params["eps"], params["ep_index"],
+                params["domain"], params["token"], params["tv_name"], params["season"],
+            ), dict(
+                output_dir=_get_library_path("tv"), temp_dir=td, progress_factory=pf,
+                cancel_event=job.cancel_event, year=params.get("year"),
+                audio_languages=params.get("audio_languages", ["ita"]),
+                subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
+                tmdb_id=params.get("tmdb_id"),
+            )
+        if type_ == "anime":
+            from vistoflow_dl.core.animeunity import download_anime_episode
+            return download_anime_episode, (
+                params["anime_id"], params["episode"],
+                params["anime_name"], params.get("anime_type", "tv"),
+            ), dict(
+                output_dir=_get_library_path("anime"), temp_dir=td, progress_factory=pf,
+                cancel_event=job.cancel_event, year=params.get("year"),
+                audio_languages=params.get("audio_languages", ["ita"]),
+                subtitle_languages=params.get("subtitle_languages", ["ita", "eng"]),
+            )
+        raise ValueError(f"Unknown schedule type: {type_!r}")
+
+    # ── Job lifecycle ──────────────────────────────────────────────────────────
+
+    def fire_now(self, job_id: str) -> bool:
+        job = self._jobs.get(job_id)
+        if not job or job.status != "scheduled" or job.schedule_id is None:
+            return False
+        entry = self._schedule_store.get_by_schedule_id(job.schedule_id) if self._schedule_store else None
+        if entry is None:
+            return False
+        self._fire_job(job, entry["type"], entry["params"])
+        return True
+
+    def cancel(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.status not in ("scheduled", "queued", "paused", "running"):
+                return False
+            # A scheduled job was never handed to the executor, and a parked one
+            # has left it, so _run_download will not run for either and nothing
+            # else would ever tell listeners it is over. Queued and running ones
+            # go through _run_download, which notifies on every path.
+            orphaned = job.status == "scheduled" or job.parked is not None
+            job.parked = None
+            job.paused = False
+            job.cancel_event.set()
+            job.status = "cancelled"
+        self._slots.wake()
+        self._emit(job, {"type": "error", "message": "Annullato"})
+        if orphaned:
+            self._notify_listeners(job)
+        return True
+
+    def pause_batch(self, batch_id: str) -> int:
+        """Hold back every job of a batch still waiting to start (#43).
+
+        What is already downloading finishes: its stream token was issued when
+        it started and would not outlive a long pause, while a job that has not
+        started asks for its own when it does. Returns how many were paused.
+        """
+        with self._lock:
+            jobs = [j for j in self._jobs.values()
+                    if j.batch_id == batch_id and j.status == "queued" and not j.paused]
+            for job in jobs:
+                job.paused = True
+                job.status = "paused"
+                job.queue_seq = None
+                # One between automatic retries parks when its wait ends.
+                job.retry_at = None
+                # Under the lock, so it cannot overtake the "running" of a job
+                # that won its slot a moment before (_attempt).
+                self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "paused"})
+        # Waiters re-check and leave the line; each parks on its own thread.
+        self._slots.wake()
+        return len(jobs)
+
+    def resume_batch(self, batch_id: str) -> int:
+        """Put a paused batch back in the line, behind whatever joined it since."""
+        with self._lock:
+            jobs = [j for j in self._jobs.values()
+                    if j.batch_id == batch_id and j.status == "paused"]
+            parked = []
+            for job in jobs:
+                job.paused = False
+                job.status = "queued"
+                if job.parked is not None:
+                    parked.append((job, job.parked))
+                    job.parked = None
+        for job in jobs:
+            self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "queued"})
+        # A job not parked yet is still on its thread and goes back in line by
+        # itself (_attempt); a parked one needs a thread again.
+        for job, (fn, args, kwargs) in parked:
+            self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+        return len(jobs)
+
+    def cancel_batch(self, batch_id: str, delete_files: bool = False) -> tuple[int, int]:
+        """Cancel every job of a batch not over yet, the running one included.
+
+        Through cancel(), one job at a time, so each still reaches its listeners
+        exactly once and the batch closes. The waiting ones go first: cancelling
+        the running one frees its slot, and a sibling still in line would take
+        it and start downloading before its own turn to be cancelled came.
+
+        With ``delete_files`` the episodes the batch already finished leave the
+        library too, and turn "cancelled" on the page; their listeners heard
+        "done" already and are not told again. The running one's partial file
+        is removed by the download itself as it stops. Returns how many jobs
+        were cancelled and how many finished ones were removed.
+        """
+        with self._lock:
+            batch = [j for j in self._jobs.values() if j.batch_id == batch_id]
+            jobs = [j for j in batch if j.status in ("scheduled", "queued", "paused", "running")]
+            finished = [j for j in batch if j.status == "done"] if delete_files else []
+            for job in jobs:
+                job.purge = delete_files
+        jobs.sort(key=lambda j: j.status == "running")
+        cancelled = sum(self.cancel(j.job_id) for j in jobs)
+
+        removed = 0
+        for job in finished:
+            if job.output_path:
+                remove_download_output(job.output_path)
+            with self._lock:
+                job.status = "cancelled"
+                job.output_path = None
+                self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "cancelled"})
+            removed += 1
+        return cancelled, removed
+
+    def _park(self, job: DownloadJob, fn, args, kwargs) -> bool:
+        """Leave the executor for a paused job. False when it was resumed or
+        cancelled in the meantime, which the caller handles."""
+        with self._lock:
+            if not job.paused or job.cancel_event.is_set():
+                return False
+            job.parked = (fn, args, kwargs)
+            job.status = "paused"
+            return True
+
+    def dismiss(self, job_id: str) -> bool:
+        """Remove a finished/cancelled job and clean it from the schedule store."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.status not in ("done", "error", "cancelled"):
+                return False
+            del self._jobs[job_id]
+        if self._schedule_store is not None:
+            self._schedule_store.remove_by_job_id(job_id)
+        self._broadcast({"type": "job_dismissed", "job_id": job_id})
+        return True
+
+    def retry(self, job_id: str) -> Optional[str]:
+        """Run a failed job again as a new job; returns the new job id.
+
+        The failed entry goes away in the same step, so a second failure makes a
+        fresh entry instead of a duplicate. The new job leaves the batch it came
+        from: that batch counted this episode already, and closes (or has
+        closed) on its own count — reporting into it again would close it early
+        or land in a batch that no longer exists. A retry succeeding is
+        therefore announced on its own.
+        """
+        with self._lock:
+            old = self._jobs.get(job_id)
+            if not old or old.status != "error" or old.call is None:
+                return None
+            del self._jobs[job_id]
+        if self._schedule_store is not None:
+            self._schedule_store.remove_by_job_id(job_id)
+        self._broadcast({"type": "job_dismissed", "job_id": job_id})
+
+        job = self._make_job(
+            old.title, old.type, phases=list(old.phases),
+            user_id=old.user_id, media_label=old.media_label, year=old.year,
+            season=old.season, episode_number=old.episode_number,
+            external_id=old.external_id,
+        )
+        fn, args, kwargs = old.call
+        return self._submit_job(
+            job, fn, *args, **kwargs,
+            temp_dir=str(TMP_DIR / job.job_id),
+            progress_factory=self._make_progress_factory(job),
+            cancel_event=job.cancel_event,
+        )
+
+    @staticmethod
+    def _remember_call(job: DownloadJob, fn, args, kwargs):
+        job.call = (fn, args, {k: v for k, v in kwargs.items() if k not in _JOB_BOUND_KWARGS})
+
+    def _run_download(self, job: DownloadJob, fn, *args, **kwargs):
+        # Listeners fire outside the semaphore: a listener does DB writes and
+        # blocking HTTP (external notification channels), and holding a download
+        # slot for that would cost real throughput. The outer try/finally makes
+        # every path notify exactly once — including the job cancelled before it
+        # ever started, which used to return early and notify nobody, leaving
+        # anything counting completions waiting forever. An automatic retry is
+        # not a path out: it loops here, so a batch still counts the episode
+        # once, with its final outcome.
+        try:
+            while self._attempt(job, fn, args, kwargs):
+                # The wait holds no download slot, and a cancel ends it at once.
+                if job.cancel_event.wait(AUTO_RETRY_DELAY):
+                    job.retry_at = None
+                    job.status = "cancelled"
+                    self._emit(job, {"type": "error", "message": "Annullato"})
+                    return
+                job.retry_at = None
+                if "progress_factory" in kwargs:
+                    # The factory carries byte totals from phase to phase; the
+                    # failed attempt's must not count toward the new one.
+                    kwargs = {**kwargs, "progress_factory": self._make_progress_factory(job)}
+        finally:
+            # A parked job is not over: it is resubmitted on resume, and
+            # notifies then - or cancel() does, if it never comes back.
+            if job.parked is None:
+                self._notify_listeners(job)
+
+    def _attempt(self, job: DownloadJob, fn, args, kwargs) -> bool:
+        """Run the download once. True when it failed and should run again."""
+        while not self._slots.acquire(job, on_queued=self._announce_queued):
+            if job.cancel_event.is_set():
+                job.status = "cancelled"
+                self._emit(job, {"type": "error", "message": "Annullato"})
+                return False
+            if self._park(job, fn, args, kwargs):
+                return False
+            # Resumed before it could park: straight back in line.
+        try:
+            with self._lock:
+                # It won its slot, so a pause arriving now is too late for it:
+                # it runs, and must not be resumed later as if still waiting.
+                job.paused = False
+                job.status = "running"
+                self._broadcast({"type": "job_status", "job_id": job.job_id, "status": "running"})
+
+            try:
+                result = fn(*args, **kwargs)
+                # Under the lock cancel_batch() reads the batch with: either it
+                # sees this job done and removes its files, or this sees purge.
+                with self._lock:
+                    if not job.purge:
+                        job.status = "done"
+                        job.output_path = result
+                if job.purge:
+                    # Its batch was cancelled with its files while the last
+                    # bytes landed: what it wrote goes the way of the rest.
+                    if result:
+                        remove_download_output(result)
+                    raise DownloadCancelledError("Download annullato dall'utente")
+                self._emit(job, {"type": "done", "output_path": result})
+            except DownloadCancelledError:
+                job.status = "cancelled"
+                self._emit(job, {"type": "error", "message": "Annullato"})
+            except Exception as e:
+                if job.retries < AUTO_RETRIES and _worth_retrying(e):
+                    job.retries += 1
+                    logger.warning("Job %s failed (%s); retry %d/%d in %ds",
+                                   job.job_id, e, job.retries, AUTO_RETRIES, AUTO_RETRY_DELAY)
+                    job.status = "queued"
+                    job.error = str(e)
+                    job.retry_at = datetime.now(timezone.utc) + timedelta(seconds=AUTO_RETRY_DELAY)
+                    job.progress = {**job.progress, "current": 0, "pct": 0, "speed": 0,
+                                    "eta": None, "bytes_done": 0}
+                    self._broadcast({"type": "job_retrying", "job": self._job_to_dict(job)})
+                    return True
+                logger.exception(f"Job {job.job_id} failed: {e}")
+                job.status = "error"
+                job.error = str(e)
+                self._emit(job, {"type": "error", "message": str(e)})
+            finally:
+                tmp_path = TMP_DIR / job.job_id
+                if tmp_path.exists():
+                    shutil.rmtree(tmp_path, ignore_errors=True)
+                    logger.info("Cleaned up temp dir: %s", tmp_path)
+        finally:
+            self._slots.release()
+        return False
+
+    def _announce_queued(self, job: DownloadJob) -> None:
+        """A job joined the line for a slot — first time, or back from a retry
+        wait. Its ticket is what orders the "In attesa" list."""
+        self._broadcast({"type": "job_queued", "job_id": job.job_id, "queue_seq": job.queue_seq})
+
+    def _submit_job(self, job: DownloadJob, fn, *args, **kwargs) -> str:
+        with self._lock:
+            self._jobs[job.job_id] = job
+        self._remember_call(job, fn, args, kwargs)
+        self._broadcast({"type": "job_created", "job": self._job_to_dict(job)})
+        self._executor.submit(self._run_download, job, fn, *args, **kwargs)
+        return job.job_id
+
+    def _make_job(self, title: str, type_: str, scheduled_at: Optional[datetime] = None,
+                  schedule_id: Optional[str] = None, phases: list = None,
+                  **meta) -> DownloadJob:
+        """Build a job. ``meta`` carries the notification fields declared on
+        DownloadJob (batch_id, user_id, season, …); unknown keys raise, which is
+        the point — a typo must not silently vanish."""
+        now = datetime.now(timezone.utc)
+        sa = scheduled_at.replace(tzinfo=timezone.utc) if scheduled_at and scheduled_at.tzinfo is None else scheduled_at
+        status = "scheduled" if sa and sa > now else "queued"
+        return DownloadJob(
+            job_id=str(uuid.uuid4()),
+            title=title,
+            type=type_,
+            status=status,
+            # Same instant `status` was decided against, and timezone-aware like
+            # scheduled_at so the two stay comparable.
+            created_at=now,
+            scheduled_at=scheduled_at,
+            schedule_id=schedule_id,
+            phases=phases or [],
+            **meta,
+        )
+
+    # ── Submit (immediate) ─────────────────────────────────────────────────────
+
+    def submit_film(self, id_film: int, title: str, domain: str, year: str = None,
+                    schedule_id: str = None,
+                    audio_languages: list[str] = None,
+                    subtitle_languages: list[str] = None,
+                    strict_audio: bool = False,
+                    user_id: int = None,
+                    tmdb_id: int = None) -> str:
+        from vistoflow_dl.core.film import download_film
+
+        job = self._make_job(title, "film", schedule_id=schedule_id,
+                             phases=self._compute_phases(audio_languages or ["ita"]),
+                             user_id=user_id, media_label=title, year=year,
+                             external_id=str(id_film))
+        return self._submit_job(
+            job, download_film,
+            id_film, title, domain,
+            output_dir=_get_library_path("film"),
+            temp_dir=str(TMP_DIR / job.job_id),
+            progress_factory=self._make_progress_factory(job),
+            year=year,
+            cancel_event=job.cancel_event,
+            audio_languages=audio_languages or ["ita"],
+            subtitle_languages=subtitle_languages or ["ita", "eng"],
+            strict_audio=strict_audio,
+            tmdb_id=tmdb_id,
+        )
+
+    def submit_episode(self, tv_id: int, eps: list[dict], ep_index: int, domain: str,
+                       token: str, tv_name: str, season: int, year: str = None,
+                       schedule_id: str = None,
+                       audio_languages: list[str] = None,
+                       subtitle_languages: list[str] = None,
+                       strict_audio: bool = False,
+                       user_id: int = None, batch_id: str = None,
+                       batch_kind: str = None, batch_label: str = None,
+                       tmdb_id: int = None) -> str:
+        from vistoflow_dl.core.tv import download_episode, fmt_ep
+
+        ep = eps[ep_index]
+        title = f"{tv_name} S{season:02d}E{fmt_ep(ep['n'])}"
+        job = self._make_job(title, "episode", schedule_id=schedule_id,
+                             phases=self._compute_phases(audio_languages or ["ita"]),
+                             user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
+                             batch_label=batch_label, media_label=tv_name, year=year,
+                             season=season, episode_number=str(ep["n"]),
+                             external_id=str(tv_id))
+        return self._submit_job(
+            job, download_episode,
+            tv_id, eps, ep_index, domain, token, tv_name, season,
+            output_dir=_get_library_path("tv"),
+            temp_dir=str(TMP_DIR / job.job_id),
+            progress_factory=self._make_progress_factory(job),
+            cancel_event=job.cancel_event,
+            year=year,
+            audio_languages=audio_languages or ["ita"],
+            subtitle_languages=subtitle_languages or ["ita", "eng"],
+            strict_audio=strict_audio,
+            tmdb_id=tmdb_id,
+        )
+
+    # AnimeUnity deliberately gains no tmdb_id: an anime here has no TMDB
+    # identifier and its embed lives on a different host, so a fallback
+    # provider would have nothing to resolve against.
+    def submit_anime_episode(self, anime_id: str, episode: dict, anime_name: str,
+                             anime_type: str = "tv", year: str = None,
+                             schedule_id: str = None,
+                             audio_languages: list[str] = None,
+                             subtitle_languages: list[str] = None,
+                             strict_audio: bool = False,
+                             user_id: int = None, batch_id: str = None,
+                             batch_kind: str = None, batch_label: str = None) -> str:
+        from vistoflow_dl.core.animeunity import download_anime_episode
+
+        ep_num = episode.get("number", "?")
+        title = f"{anime_name} E{ep_num}"
+        job = self._make_job(title, "anime", schedule_id=schedule_id,
+                             phases=self._compute_phases(audio_languages or ["ita"]),
+                             user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
+                             batch_label=batch_label, media_label=anime_name, year=year,
+                             episode_number=str(ep_num), external_id=str(anime_id))
+        return self._submit_job(
+            job, download_anime_episode,
+            anime_id, episode, anime_name, anime_type,
+            output_dir=_get_library_path("anime"),
+            temp_dir=str(TMP_DIR / job.job_id),
+            progress_factory=self._make_progress_factory(job),
+            cancel_event=job.cancel_event,
+            year=year,
+            audio_languages=audio_languages or ["ita"],
+            subtitle_languages=subtitle_languages or ["ita", "eng"],
+            strict_audio=strict_audio,
+        )
+
+    # ── Schedule (future) ──────────────────────────────────────────────────────
+
+    def schedule_film(self, id_film: int, title: str, domain: str,
+                      scheduled_at: datetime, year: str = None,
+                      audio_languages: list[str] = None,
+                      subtitle_languages: list[str] = None,
+                      user_id: int = None,
+                      tmdb_id: int = None) -> str:
+        params = {
+            "id": id_film, "title": title, "domain": domain, "year": year,
+            "audio_languages": audio_languages or ["ita"],
+            "subtitle_languages": subtitle_languages or ["ita", "eng"],
+            # Persisted with the schedule: the cache it came from will not
+            # survive until the job fires.
+            "tmdb_id": tmdb_id,
+        }
+        return self._add_schedule("film", scheduled_at, params, title,
+                                  user_id=user_id, media_label=title, year=year)
+
+    def schedule_episode(self, tv_id: int, eps: list[dict], ep_index: int, domain: str,
+                         token: str, tv_name: str, season: int,
+                         scheduled_at: datetime, year: str = None,
+                         audio_languages: list[str] = None,
+                         subtitle_languages: list[str] = None,
+                         user_id: int = None, batch_id: str = None,
+                         batch_kind: str = None, batch_label: str = None,
+                         tmdb_id: int = None) -> str:
+        from vistoflow_dl.core.tv import fmt_ep
+        ep = eps[ep_index]
+        title = f"{tv_name} S{season:02d}E{fmt_ep(ep['n'])}"
+        params = {
+            "tv_id": tv_id, "eps": eps, "ep_index": ep_index,
+            "domain": domain, "token": token, "tv_name": tv_name,
+            "season": season, "year": year,
+            "audio_languages": audio_languages or ["ita"],
+            "subtitle_languages": subtitle_languages or ["ita", "eng"],
+            "tmdb_id": tmdb_id,
+        }
+        return self._add_schedule("episode", scheduled_at, params, title,
+                                  user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
+                                  batch_label=batch_label, media_label=tv_name, year=year,
+                                  season=season, episode_number=str(ep["n"]))
+
+    def schedule_anime_episode(self, anime_id: str, episode: dict, anime_name: str,
+                               scheduled_at: datetime, anime_type: str = "tv",
+                               year: str = None,
+                               audio_languages: list[str] = None,
+                               subtitle_languages: list[str] = None,
+                               user_id: int = None, batch_id: str = None,
+                               batch_kind: str = None, batch_label: str = None) -> str:
+        ep_num = episode.get("number", "?")
+        title = f"{anime_name} E{ep_num}"
+        params = {
+            "anime_id": anime_id, "episode": episode, "anime_name": anime_name,
+            "anime_type": anime_type, "year": year,
+            "audio_languages": audio_languages or ["ita"],
+            "subtitle_languages": subtitle_languages or ["ita", "eng"],
+        }
+        return self._add_schedule("anime", scheduled_at, params, title,
+                                  user_id=user_id, batch_id=batch_id, batch_kind=batch_kind,
+                                  batch_label=batch_label, media_label=anime_name, year=year,
+                                  episode_number=str(ep_num))
+
+    def _add_schedule(self, type_: str, scheduled_at: datetime, params: dict, title: str,
+                      **meta) -> str:
+        if self._schedule_store is None:
+            raise RuntimeError("ScheduleStore not configured")
+        schedule_id = self._schedule_store.add(type_, scheduled_at, params)
+        # Firing reuses this same job object, so notification metadata set here
+        # survives until the download actually runs. It does not survive a
+        # restart (load_scheduled_from_store rebuilds from the JSON params), and
+        # neither does the in-memory batch it would belong to.
+        meta.setdefault("external_id", _schedule_external_id(params))
+        job = self._make_job(title, type_, scheduled_at=scheduled_at, schedule_id=schedule_id,
+                             phases=self._compute_phases(params.get("audio_languages") or ["ita"]),
+                             **meta)
+        with self._lock:
+            self._jobs[job.job_id] = job
+        self._schedule_store.set_job_id(schedule_id, job.job_id)
+        self._broadcast({"type": "job_created", "job": self._job_to_dict(job)})
+        return job.job_id
+
+    def load_scheduled_from_store(self):
+        """Re-hydrate pending scheduled entries from the JSON store on startup."""
+        if self._schedule_store is None:
+            return
+        for entry in self._schedule_store.list_all():
+            if entry.get("fired"):
+                continue  # already dispatched in a previous session — skip
+            sid = entry["schedule_id"]
+            type_ = entry["type"]
+            params = entry["params"]
+            sa_raw = datetime.fromisoformat(entry["scheduled_at"])
+            scheduled_at = sa_raw if sa_raw.tzinfo else sa_raw.replace(tzinfo=timezone.utc)
+            title = params.get("title") or params.get("tv_name") or params.get("anime_name", "?")
+            # What the registry needs to file the download survives in the
+            # params; the rest of the notification metadata does not.
+            job = self._make_job(title, type_, scheduled_at=scheduled_at, schedule_id=sid,
+                                 phases=self._compute_phases(params.get("audio_languages") or ["ita"]),
+                                 media_label=title, year=params.get("year"),
+                                 external_id=_schedule_external_id(params))
+            with self._lock:
+                self._jobs[job.job_id] = job
+            self._schedule_store.set_job_id(sid, job.job_id)
+            logger.info("Restored scheduled job %s (schedule_id=%s) for %s", job.job_id, sid, scheduled_at)
+
+
+job_manager = JobManager()

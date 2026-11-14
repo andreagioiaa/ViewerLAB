@@ -1,4 +1,4 @@
-# Avvia VistoFlow Pro senza attivare manualmente l'ambiente virtuale.
+# Avvia VistoFlow senza attivare manualmente l'ambiente virtuale.
 # Esecuzione consigliata:
 #   powershell -ExecutionPolicy Bypass -File .\run.ps1
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,7 @@ if (-not (Test-Path -LiteralPath $python)) {
     if ($LASTEXITCODE -ne 0) { throw "Creazione dell'ambiente virtuale non riuscita." }
 }
 
-& $python -c "import PyQt6, vlc, httpx, pydantic, bs4, yaml, tenacity, dotenv, lxml.etree, certifi" 2>$null
+& $python -c "import PySide6, vlc, httpx, pydantic, bs4, yaml, tenacity, dotenv, lxml.etree, certifi, fastapi, uvicorn, apprise, cryptography, m3u8, imageio_ffmpeg" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[VistoFlow] Installo le dipendenze..."
     & $python -m pip install --upgrade pip

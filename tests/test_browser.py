@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from browser_dialog import BROWSER_ENGINE, normalize_browser_url
-from browser_engine import _is_stream_url
+from vistoflow.library.browser_dialog import BROWSER_ENGINE, normalize_browser_url
+from vistoflow.library.browser_engine import _is_stream_url
 
 
 def test_browser_url_normalization() -> None:

@@ -1,18 +1,84 @@
-# VistoFlow Pro
+# VistoFlow
 
-Libreria locale per film e serie TV con player VLC integrato, copertine,
-classificazione manuale, TAG, **ricerca online su canali configurabili** e
-**browser WebEngine integrato**.
+Media center desktop (PySide6) in un'unica finestra, con barra laterale in stile
+Stream Goat:
 
-Tutto è integrato in un'unica applicazione desktop: la ricerca online non è un
-servizio separato e non richiede una CLI. La pipeline (canali → metadati TMDB →
-resolver → player VLC) gira dentro VistoFlow.
+| Pagina | Cosa fa | Player |
+|---|---|---|
+| **▦ Libreria** | Film e serie TV sul disco: copertine, TAG, storico, canali, link salvati, browser integrato, **scheda IMDb** di ogni film/serie. | VLC |
+| **⌕ Cerca** | Ricerca su **IMDb** (locandina, voto, durata, generi, regia, cast, trama) e, nella stessa pagina, sulle tue fonti online. | — |
+| **▶ Player** | Riproduzione dei flussi trovati nelle fonti online (verificati prima). | mpv |
+| **☰ Fonti** | Cataloghi JSON, API, siti, link diretti. | — |
+| **↓ Download** | Pannello di download da StreamingCommunity e AnimeUnity: ricerca, film/serie/anime, coda, serie seguite, notifiche, hook, file manager, server MCP. | — |
+| **⚙ Impostazioni** | Lingua italiano/inglese. | — |
 
 > **Uso legale**: configura solo fonti autorizzate e contenuti leciti. VistoFlow
-> non aggira DRM, paywall, login o altre protezioni. Il canale di esempio è
-> fittizio e disattivato.
+> non aggira DRM, paywall, login o altre protezioni.
 
-## Novità
+## Download (StreamingCommunity / AnimeUnity)
+
+La pagina **↓ Download** integra il pannello di *StreamingCommunity-downloader*
+(pacchetto `vistoflow_dl`), **senza Jellyfin**: niente login né utenti, si usa
+subito. Tutto il resto c'è: ricerca e vetrine delle due fonti, scheda titolo
+(trama, generi, voto, trailer), download HLS con scelta di audio e sottotitoli,
+coda con avanzamento, pausa e ripresa, download programmati, serie/anime
+seguiti, recupero automatico del dominio, librerie e schema dei nomi, formato
+MKV/MP4, notifiche (Discord, Telegram, ntfy… via Apprise), webhook post-download,
+file manager e server MCP per agenti AI.
+
+- **Guarda senza scaricare**: nella scheda di un film (pulsante *Guarda*) o accanto
+  a ogni episodio (▶) il pannello risolve il flusso e lo apre nel **player mpv**
+  di VistoFlow, senza scrivere nulla su disco. Funziona anche da *Apri nel
+  browser*: il video parte comunque nella finestra di VistoFlow.
+- Il pannello gira in VistoFlow su `127.0.0.1` (porta casuale) e parte con
+  l'app, così download programmati e serie seguite proseguono da soli finché
+  VistoFlow è aperto. **Apri nel browser** lo apre nel browser di sistema.
+- Al primo uso imposta il **dominio della sorgente** in *Impostazioni → Sorgente*
+  (o accetta quello proposto) e le **librerie** dove salvare i file.
+- Dati in `%LOCALAPPDATA%\VistoFlow\download\`; senza librerie i file vanno in
+  `~/Videos/VistoFlow`. FFmpeg: dal `PATH` o quello incluso in `imageio-ffmpeg`.
+- Note tecniche e regole del codice: [docs/DOWNLOAD.md](docs/DOWNLOAD.md).
+
+## IMDb
+
+I metadati arrivano da **Cinemeta** (`v3-cinemeta.strem.io`), il servizio con dati
+IMDb usato anche da Stream Goat: non serve una chiave API.
+
+- **Libreria**: ogni film e ogni serie viene collegato automaticamente a IMDb in
+  background (anche i titoli italiani: *Salvate il soldato Ryan* → *Saving
+  Private Ryan*). L'intestazione della raccolta mostra ★ voto, anno, durata,
+  generi, regia e cast; la trama è nel tooltip. Se manca la copertina viene
+  importata la locandina IMDb.
+- Pulsante **🎬 IMDb**: *Apri su IMDb*, *Collega a un altro titolo…* (titolo o ID
+  `tt…`) per correggere un abbinamento, *Aggiorna da IMDb*.
+- **Cerca**: risultati IMDb con locandina; la scheda mostra tutti i dettagli e
+  offre **Riproduci dalla libreria** (se il titolo è tra i tuoi file),
+  **Cerca nelle tue fonti** e **Apri su IMDb**.
+- Gli abbinamenti sono salvati in `visto_settings.json` (sezione `imdb`), le
+  risposte di Cinemeta in `%LOCALAPPDATA%\VistoFlow\imdb_cache.json` (14 giorni).
+- Le trame sono in inglese (Cinemeta non ha la localizzazione italiana).
+
+## Lingua (italiano / inglese)
+
+**⚙ Impostazioni → Lingua dell'interfaccia** permette di scegliere *Italiano* o
+*English*. La scelta viene salvata in `%LOCALAPPDATA%\VistoFlow\settings.json` e
+applicata al riavvio (il dialogo propone **Riavvia ora**). Sono tradotte le
+pagine Cerca, Player, Fonti e Impostazioni; la Libreria è in italiano.
+
+## Fonti online e player mpv
+
+Documentazione completa: [docs/ONLINE.md](docs/ONLINE.md). Analisi REA di
+Veezie.st e architettura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Diagnosi
+dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md).
+
+- mpv non è incluso: imposta `MPV_PATH` oppure copia `mpv.exe` in `bin/`.
+- Configurazione e log: `%LOCALAPPDATA%\VistoFlow\` (`sources.json`, `vistoflow.log`).
+  Al primo avvio fonti e lingua vengono copiate dalla vecchia cartella `ViewerLAB`.
+- Riga di comando: `python main.py --self-test sintel`, `--autoplay QUERY`,
+  `--smoke-test QUERY`, `--mpv PATH`, `--data-dir DIR`, `--list-sources`.
+
+## Libreria
+
 
 ### Ricerca online integrata
 - Il pulsante **🌐 Online** nella barra superiore apre la ricerca dentro
@@ -183,46 +249,32 @@ Serve VLC installato sul sistema (python-vlc usa la libreria di VLC).
 
 ## Struttura
 
-- `main.py`, `dialogs.py`, `media_manager.py`, `player_widget.py`: applicazione
-  desktop e libreria locale.
-- `online_dialog.py`: interfaccia della ricerca online.
-- `link_dialog.py`: gestione dei link salvati e aggiornamento dei flussi.
-- `browser_dialog.py`: browser incorporato e incorporamento della finestra nativa.
-- `browser_engine.py`: processo PySide6/QtWebEngine del browser.
-- `async_tasks.py`: lavori asincroni condivisi dalla GUI.
-- `vistoflow_online/`: motore integrato (canali, resolver, TMDB, servizio).
-- `channels/`: configurazione dei canali dell'utente.
-- `media_center/`: prototipo/reference usato durante il porting; l'app non lo
-  importa e può essere rimosso senza perdere funzionalità.
-
-## Creazione di eseguibili (.exe)
-
-`build_exe.py` è una GUI separata per PyInstaller:
-
-```bat
-python build_exe.py
+```
+main.py              # avvio + dispatch del processo browser
+vistoflow/           # finestra unica, IMDb, lingua, fonti online, player mpv
+  app.py main_window.py style.py imdb.py i18n.py dialogs.py player*.py
+  html_site.py probe.py search.py sources.py models.py config.py selftest.py
+  library/           # libreria locale (ex VistoFlow Pro)
+    window.py dialogs.py media_manager.py player_widget.py online_dialog.py
+    link_dialog.py browser_dialog.py browser_engine.py cover_fetcher.py theme.py
+vistoflow_online/    # motore canali/resolver/TMDB usato dalla libreria
+channels/            # canali JSON/YAML dell'utente
+sources/             # catalogo demo delle fonti online
+bin/                 # metti qui mpv.exe (non versionato)
+tests/               # pytest
+docs/                # ONLINE.md, ARCHITECTURE.md
 ```
 
-oppure doppio click su `build_exe_gui.bat`.
+`visto_settings.json` e `covers/` (dati della libreria) restano nella
+cartella dell'app e non sono versionati.
 
-- **Sorgente**: uno script `.py` oppure una cartella di progetto. Se scegli una
-  cartella, il tool trova i file Python e ti fa scegliere il file principale.
-- **Output**: cartella dove verrà creato l'eseguibile, nome, icona opzionale.
-- Opzioni: file unico, senza console, build pulita, import nascosti, dati
-  aggiuntivi (`origine;destinazione`), argomenti extra di PyInstaller.
-- Il log di PyInstaller è mostrato in tempo reale, con possibilità di annullare.
-- Se PyInstaller non è installato, l'app propone di installarlo.
-- Per la ricerca online nell'eseguibile, lascia la cartella `channels/` accanto
-  al `.exe` (e, se usi un file `.env`, anche quello). I percorsi dei canali e di
-  `.env` vengono risolti rispetto alla cartella dell'eseguibile.
-- Per il **browser integrato**, `build_exe.py` rileva `browser_engine.py` e
-  aggiunge automaticamente `--hidden-import browser_engine` e
-  `--collect-all PySide6`. L'eseguibile riusa sé stesso con
-  `--browser-engine` per avviare il motore WebEngine in un processo separato.
-  Se usi PyInstaller manualmente, aggiungi quegli stessi parametri.
-
-Installazione manuale di PyInstaller:
+## Creare l'eseguibile
 
 ```bat
-python -m pip install pyinstaller
+.venv\Scripts\python.exe -m pip install pyinstaller
+.venv\Scripts\python.exe build_exe.py --clean
 ```
+
+Il risultato è `dist\VistoFlow\VistoFlow.exe`. mpv e VLC non sono inclusi: copia
+`mpv.exe` in `dist\VistoFlow\bin\` e installa VLC. Il browser integrato riusa lo
+stesso `.exe` con `--browser-engine`.

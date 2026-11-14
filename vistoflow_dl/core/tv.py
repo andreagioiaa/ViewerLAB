@@ -1,0 +1,295 @@
+import logging
+import os
+from urllib.parse import unquote, quote
+
+import requests
+from bs4 import BeautifulSoup
+
+from vistoflow_dl.core.headers import get_headers, sanitize_filename
+from vistoflow_dl.core.m3u8 import download_m3u8, fetch_master_languages, M3U8_Parser
+from vistoflow_dl.core.page import get_localized, site_url
+from vistoflow_dl.core._shared import (
+    MissingAudioTrackError,
+    StreamSource,
+    resolve_stream,
+    _fetch_vixcloud_embed,
+    _parse_content,
+    _get_m3u8_key,
+    _get_m3u8_url,
+    embed_referer,
+    apply_video_host,
+)
+from vistoflow_dl.core.paths import episode_path, fmt_ep  # noqa: F401  (fmt_ep re-exported)
+
+logger = logging.getLogger(__name__)
+
+
+def get_token(id_tv: int, domain: str) -> str:
+    session = requests.Session()
+    ua = get_headers()
+    for path in (f"/it/watch/{id_tv}", f"/watch/{id_tv}"):
+        session.get(f"https://{domain}{path}", headers={"user-agent": ua}, timeout=10)
+        if "XSRF-TOKEN" in session.cookies:
+            return unquote(session.cookies["XSRF-TOKEN"])
+    raise RuntimeError("XSRF-TOKEN cookie not found after page visit")
+
+
+def get_title_props(id_film: int, title_name: str, site_version: str, domain: str) -> dict:
+    """The full ``props.title`` payload of a title page.
+
+    This request was already being made to read one integer out of it, throwing
+    away the plot, the genres, the images, the trailers and ``tmdb_id``, which
+    is what lets the panel show real metadata and is the identifier any
+    fallback stream provider would resolve against.
+
+    The same route serves films, despite living in tv.py: the site has one title
+    page, and splitting this in two would mean two copies of the Inertia header
+    dance.
+    """
+    req = get_localized(
+        domain, f"/titles/{id_film}-{title_name}",
+        headers={
+            "X-Inertia": "true",
+            "X-Inertia-Version": site_version,
+            "User-Agent": get_headers(),
+        },
+        timeout=15,
+    )
+    if not req.ok:
+        raise RuntimeError(f"Cannot fetch TV info: HTTP {req.status_code}")
+    return req.json()["props"]["title"]
+
+
+def season_numbers(props: dict) -> list[int]:
+    """The numbers of the seasons a title page lists, ascending.
+
+    Not ``range(1, seasons_count + 1)``: numbering has holes. Bake Off Italia
+    lists 1-4 and 10-14 with ``seasons_count`` 9 (#40), and the site answers a
+    season it does not have with season 1 - so counting up to nine showed five
+    copies of season 1, and downloading "season 5" filed its episodes as S05.
+    The count is only the fallback for a payload without the list.
+    """
+    numbers = set()
+    for season in props.get("seasons") or []:
+        try:
+            numbers.add(int(season.get("number")))
+        except (TypeError, ValueError):
+            continue
+    if numbers:
+        return sorted(n for n in numbers if n > 0)
+    return list(range(1, int(props.get("seasons_count") or 0) + 1))
+
+
+def get_season_numbers(id_film: int, title_name: str, site_version: str, domain: str) -> list[int]:
+    """The seasons of a series, as the numbers the site itself uses.
+
+    The watch poller, the seasons endpoint, the batch download path and the
+    MCP tools all enumerate through this; see ``season_numbers`` for why it is
+    a list and not a count.
+    """
+    return season_numbers(get_title_props(id_film, title_name, site_version, domain))
+
+
+def get_info_season(tv_id: int, tv_name: str, domain: str, version: str, token: str, n_stagione: int) -> list[dict]:
+    req = get_localized(
+        domain, f"/titles/{tv_id}-{tv_name}/season-{n_stagione}",
+        headers={
+            "authority": f"{domain}",
+            "referer": site_url(domain, f"/titles/{tv_id}-{tv_name}"),
+            "user-agent": get_headers(),
+            "x-inertia": "true",
+            "x-inertia-version": version,
+            "x-xsrf-token": token,
+        },
+        timeout=15,
+    )
+    if not req.ok:
+        raise RuntimeError(f"Cannot fetch season info: HTTP {req.status_code}")
+    loaded = req.json()["props"]["loadedSeason"]
+    # A season the title does not have is answered with 200 and season 1, not
+    # a 404 (#40). Taking it at its word would file season 1 under another
+    # number, so the season the page actually loaded has to be the one asked.
+    number = loaded.get("number")
+    if number is not None and str(number) != str(n_stagione):
+        raise RuntimeError(f"Season {n_stagione} not found (the site answered with season {number})")
+    return [_episode(ep) for ep in loaded["episodes"]]
+
+
+def _episode_image(images: list | None) -> str | None:
+    """The episode still, routed through the image proxy like every other
+    artwork: the CDN host is resolved server-side, never by the browser."""
+    for kind in ("cover", "still", "background"):
+        for image in images or []:
+            if image.get("type") == kind and image.get("filename"):
+                return f"/api/image/{image['filename']}"
+    return None
+
+
+def _episode(ep: dict) -> dict:
+    """One episode, in the shape the panel renders.
+
+    This used to keep ``{id, n, name}`` and discard the rest of a payload that
+    had already been paid for. The episode list shows a duration, a synopsis
+    and a still, and all three ride in the same response.
+
+    Everything past ``id`` and ``n`` is read with ``.get()``: these are a third
+    party's field names, and one renamed key must not take a whole season down
+    with it. ``id`` and ``n`` stay required — an episode without them cannot be
+    downloaded, so there is nothing to render.
+    """
+    return {
+        "id": ep["id"],
+        "n": ep["number"],
+        "name": ep.get("name"),
+        "plot": ep.get("plot") or None,
+        "duration": ep.get("duration"),
+        "still": _episode_image(ep.get("images")),
+    }
+
+
+def _get_iframe(tv_id, ep_id, domain, token):
+    ua = get_headers()
+    params = {"episode_id": ep_id, "next_episode": "1"}
+    cookies = {"XSRF-TOKEN": token}
+    for path in (f"/iframe/{tv_id}", f"/it/iframe/{tv_id}"):
+        req = requests.get(
+            f"https://{domain}{path}",
+            params=params,
+            cookies=cookies,
+            headers={
+                "referer": site_url(domain, f"/watch/{tv_id}?e={ep_id}"),
+                "user-agent": ua,
+            },
+            timeout=15,
+        )
+        if req.ok:
+            break
+    else:
+        raise RuntimeError(f"Cannot fetch episode iframe: HTTP {req.status_code}")
+
+    url_embed = apply_video_host(BeautifulSoup(req.text, "lxml").find("iframe").get("src"))
+    # The vixcloud /embed/ is behind Cloudflare — fetch via cloudscraper.
+    script_text = _fetch_vixcloud_embed(url_embed, referer=f"https://{domain}/")
+    return script_text, url_embed
+
+
+# Track collection is identical for films, episodes and anime — the same
+# vixcloud master playlist in all three cases — so there is one
+# implementation, in film.py, and strict mode cannot diverge between them.
+from vistoflow_dl.core.film import _collect_audio_tracks, _collect_subtitle_tracks  # noqa: E402
+
+
+def get_tv_languages(tv_id: int, slug: str, domain: str, version: str) -> dict:
+    """Detect available audio/subtitle languages using episode 1x01 as sample."""
+    from urllib.parse import urlparse, parse_qs
+    token = get_token(tv_id, domain)
+    eps = get_info_season(tv_id, slug, domain, version, token, 1)
+    if not eps:
+        raise RuntimeError("No episodes found in season 1")
+    embed_content, url_embed = _get_iframe(tv_id, eps[0]["id"], domain, token)
+    json_win_video, json_win_param = _parse_content(embed_content, url_embed)
+    m3u8_url = _get_m3u8_url(json_win_video, json_win_param)
+    referer = embed_referer(json_win_video, json_win_param)
+    langs = fetch_master_languages(m3u8_url, referer)
+    explicit_lang = parse_qs(urlparse(url_embed).query).get("lang", [None])[0]
+    langs["lang"] = explicit_lang
+    return langs
+
+
+def get_episode_languages(tv_id: int, ep_id: int, domain: str, token: str) -> dict:
+    """Languages available on one specific episode.
+
+    get_tv_languages() samples S01E01, which is right for the browse view but
+    not for verifying a request: tracks can differ per episode, and a request
+    approved days later must be checked against the episode it actually names.
+    """
+    embed_content, url_embed = _get_iframe(tv_id, ep_id, domain, token)
+    json_win_video, json_win_param = _parse_content(embed_content, url_embed)
+    m3u8_url = _get_m3u8_url(json_win_video, json_win_param)
+    referer = embed_referer(json_win_video, json_win_param)
+    return fetch_master_languages(m3u8_url, referer)
+
+
+def download_episode(
+    tv_id: int,
+    eps: list[dict],
+    ep_index: int,
+    domain: str,
+    token: str,
+    tv_name: str,
+    season: int,
+    output_dir: str = "videos",
+    temp_dir: str = None,
+    progress_factory=None,
+    cancel_event=None,
+    year: str = None,
+    audio_languages: list[str] = None,
+    subtitle_languages: list[str] = None,
+    strict_audio: bool = False,
+    tmdb_id: int = None,
+) -> str:
+    audio_languages = audio_languages or ["ita"]
+    subtitle_languages = subtitle_languages or []
+
+    ep = eps[ep_index]
+    logger.info(f"Downloading S{season:02d}E{fmt_ep(ep['n'])} — {ep['name']}")
+
+    def _primary() -> StreamSource:
+        embed_content, url_embed = _get_iframe(tv_id, ep["id"], domain, token)
+        json_win_video, json_win_param = _parse_content(embed_content, url_embed)
+        logger.info("Video ID: %s token: %.8s... audio lang: %s", json_win_video['id'], json_win_param.get('token', ''), json_win_video.get('lang', 'it'))
+
+        embed_referer = (
+            f"https://{json_win_video['host']}/embed/{json_win_video['id']}"
+            f"?token={json_win_param['token']}&title={quote(tv_name)}"
+            f"&referer=1&expires={json_win_param['expires']}"
+            f"&description=S{season}%3AE{ep['n']}+{quote(ep['name'])}&nextEpisode=1"
+        )
+        return StreamSource(
+            m3u8_url=_get_m3u8_url(json_win_video, json_win_param),
+            key_hex=_get_m3u8_key(json_win_video, json_win_param, embed_referer),
+            referer=embed_referer,
+            provider="vixcloud",
+        )
+
+    stream = resolve_stream(
+        _primary, tmdb_id=tmdb_id, media_type="tv", season=season, episode=ep["n"],
+    )
+    m3u8_url, m3u8_key, embed_referer = stream.m3u8_url, stream.key_hex, stream.referer
+    if stream.provider != "vixcloud":
+        logger.info("Resolved S%02dE%s through the %s fallback",
+                    season, fmt_ep(ep["n"]), stream.provider)
+
+    audio_track_urls = _collect_audio_tracks(
+        m3u8_url, embed_referer, audio_languages, strict=strict_audio
+    )
+    subtitle_track_urls = _collect_subtitle_tracks(m3u8_url, embed_referer, subtitle_languages)
+
+    # A folder a person associated with this series wins, placed at the
+    # season and episode its offsets say (app/library.py); otherwise the
+    # series' folder already on disk, whatever year it carries (#24).
+    from vistoflow_dl.library import destination
+    from vistoflow_dl.requests.resolver import EPISODE, series_episode_path
+
+    dest_path = (destination("episode", tv_id, root=output_dir, season=season,
+                             episode=ep["n"], year=year)
+                 or series_episode_path(EPISODE, tv_id, output_dir, tv_name, season,
+                                        ep["n"], year))
+
+    final_path = download_m3u8(
+        m3u8_index=m3u8_url,
+        key=m3u8_key,
+        output_filename=dest_path,
+        temp_dir=temp_dir,
+        progress_factory=progress_factory,
+        referer=embed_referer,
+        cancel_event=cancel_event,
+        audio_languages=audio_languages,
+        subtitle_languages=subtitle_languages,
+        audio_track_urls=audio_track_urls,
+        subtitle_track_urls=subtitle_track_urls,
+    )
+
+    # download_m3u8 returns the real output path: the destination is built in
+    # whatever container is configured, and the remux keeps it.
+    return final_path or dest_path

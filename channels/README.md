@@ -1,6 +1,6 @@
 # Canali della ricerca online
 
-VistoFlow Pro carica automaticamente tutti i file `.json`, `.yaml` e `.yml`
+VistoFlow carica automaticamente tutti i file `.json`, `.yaml` e `.yml`
 presenti in questa cartella. Ogni file descrive un canale autorizzato con
 selettori CSS generici: non è necessario modificare il codice dell'app.
 

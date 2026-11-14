@@ -1,0 +1,353 @@
+from dataclasses import dataclass
+from urllib.parse import urlparse, parse_qs, urljoin
+import re
+import json
+import time
+import logging
+import requests
+from .headers import get_headers
+
+logger = logging.getLogger(__name__)
+
+_scraper = None
+
+
+def _get_scraper():
+    """Shared cloudscraper session for vixcloud pages behind Cloudflare.
+
+    Falls back to a plain requests.Session if cloudscraper is unavailable.
+    """
+    global _scraper
+    if _scraper is None:
+        try:
+            import cloudscraper
+            _scraper = cloudscraper.create_scraper(
+                browser={"browser": "firefox", "platform": "darwin", "desktop": True}
+            )
+        except ImportError:
+            logger.warning("cloudscraper not installed, falling back to requests.Session")
+            _scraper = requests.Session()
+    return _scraper
+
+
+# How many times a resolution request is worth sending. This is the phase before
+# a single byte is downloaded — asking the video host where the playlist is and
+# what the key is — and a failure here throws the whole job away, so it is worth
+# a couple of extra seconds.
+RESOLVE_ATTEMPTS = 4
+
+
+def _retriable(status: int) -> bool:
+    """A 4xx is a verdict; 429 and 5xx are the source asking for room."""
+    return status == 429 or status >= 500
+
+
+def with_retry(send, *, what: str, attempts: int = RESOLVE_ATTEMPTS,
+               base_delay: float = 1.0):
+    """Send a request, retrying while the source is merely unwell.
+
+    ``send`` returns a ``requests.Response``; the first one not worth retrying
+    comes back as it is, ``.ok`` or not, because what a given status means is
+    the caller's to say.
+
+    Timeouts and dropped connections are retried, which is the whole point of
+    this existing. The two loops it replaced inspected ``response.status_code``,
+    and a timeout raises before there is one — so it fell straight through and
+    killed the job, leaving the loop covering only the subset of flaps where the
+    source still answers.
+
+    The final attempt's exception reaches the caller unchanged rather than
+    wrapped: told "Cannot fetch encryption key" when the truth was a read
+    timeout, whoever reads the log has been sent to debug the wrong thing.
+    """
+    for attempt in range(attempts):
+        last = attempt == attempts - 1
+        try:
+            response = send()
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            if last:
+                raise
+            reason = type(exc).__name__
+        else:
+            if not _retriable(response.status_code) or last:
+                return response
+            reason = f"HTTP {response.status_code}"
+
+        delay = base_delay * 2 ** attempt  # 1s, 2s, 4s
+        logger.warning("%s: %s, retrying in %gs (attempt %d/%d)",
+                       what, reason, delay, attempt + 1, attempts)
+        time.sleep(delay)
+
+    raise AssertionError("unreachable: the final attempt returns or raises")
+
+
+
+def _fetch_vixcloud_embed(url_embed, referer=None):
+    """Fetch a vixcloud /embed/ HTML page and return its <script> text.
+
+    vixcloud serves the /embed/ page behind Cloudflare, so a plain
+    requests.get intermittently returns a 403 challenge page. Route it through
+    the cloudscraper session, which clears the challenge. (Downstream /playlist,
+    /storage/enc.key and CDN segment URLs are NOT Cloudflare-gated.)
+    """
+    from bs4 import BeautifulSoup
+    headers = {"user-agent": get_headers()}
+    if referer:
+        headers["referer"] = referer
+    req = _get_scraper().get(url_embed, headers=headers, timeout=15)
+    req.raise_for_status()
+    body = BeautifulSoup(req.text, "lxml").find("body")
+    if body is None:
+        raise RuntimeError("Empty embed page body from the video host")
+    script = body.find("script")
+    if script is None:
+        raise RuntimeError("Video not available (no script tag found in embed)")
+    return script.text
+
+
+class MissingAudioTrackError(RuntimeError):
+    """A requested audio language is not present in the source.
+
+    Raised only when the caller asked for strict behaviour. Downloading with a
+    different audio track than the one a user chose is worse than failing: the
+    file looks correct, plays in the wrong language, and nobody is told.
+    """
+
+    def __init__(self, language: str, available: list[str]):
+        self.language = language
+        self.available = available
+        super().__init__(
+            f"Traccia audio '{language}' non disponibile "
+            f"(presenti: {', '.join(available) or 'nessuna'})"
+        )
+
+
+def embed_host(url_embed: str) -> str:
+    """The video host, read off the embed URL the source handed us.
+
+    Never a constant. vixcloud has moved TLD (.co to .cc) and will again, and
+    the source's own iframe always names the current one — so the playlist,
+    the key and every referer follow it without a release. It grants no trust
+    the panel did not already extend: the embed page itself is fetched from
+    this same URL.
+    """
+    parsed = urlparse(url_embed)
+    if parsed.scheme != "https" or not parsed.hostname:
+        raise RuntimeError(f"Unexpected embed URL: {url_embed[:100]!r}")
+    return parsed.hostname.lower()
+
+
+def apply_video_host(url_embed: str) -> str:
+    """The embed URL, moved to the manually configured video host if there is one.
+
+    Applied to the embed URL before anything is fetched from it, so the embed
+    page, playlist, key and referers all land on the override together — the
+    case it exists for is a source still naming a host that no longer answers.
+    """
+    from vistoflow_dl.config import configured_video_host
+
+    override = configured_video_host()
+    if not override:
+        return url_embed
+    parsed = urlparse(url_embed)
+    if not parsed.hostname:
+        return url_embed
+    return parsed._replace(scheme="https", netloc=override).geturl()
+
+
+def embed_referer(json_win_video, json_win_param) -> str:
+    """The /embed/ URL the playlist and key expect as referer."""
+    return (f"https://{json_win_video['host']}/embed/{json_win_video['id']}"
+            f"?token={json_win_param['token']}&expires={json_win_param['expires']}")
+
+
+def _parse_content(embed_content, url_embed):
+    """Parse video metadata from embed page HTML. Shared between film.py and tv.py."""
+    s = str(embed_content)
+
+    video_id_m = re.search(r"window\.video\s*=\s*\{[^}]*?\bid\s*:\s*['\"]?(\d+)['\"]?", s, re.DOTALL)
+    if not video_id_m:
+        raise RuntimeError(f"Cannot find video ID in embed. Snippet: {s[:400]!r}")
+    parsed_video = {"id": video_id_m.group(1), "host": embed_host(url_embed)}
+
+    qs = parse_qs(urlparse(url_embed).query)
+    parsed_video["can_play_fhd"] = bool(qs.get("canPlayFHD"))
+    parsed_video["scz"] = bool(qs.get("scz"))
+    parsed_video["lang"] = qs.get("lang", ["it"])[0]
+
+    win_param_m = re.search(r"params\s*:\s*\{([^}]*)\}", s, re.DOTALL)
+    if not win_param_m:
+        raise RuntimeError(f"Cannot find params in embed. Snippet: {s[:400]!r}")
+    params_raw = win_param_m.group(1).replace("\n", "").replace(" ", "")
+    json_win_param = "{" + params_raw + "}"
+    json_win_param = json_win_param.replace(",}", "}").replace("'", '"')
+    parsed_param = json.loads(json_win_param)
+
+    return parsed_video, parsed_param
+
+
+def _get_m3u8_key(json_win_video, json_win_param, referer):
+    """Fetch the AES decryption key from the video host, where it has always lived."""
+    url = f"https://{json_win_video['host']}/storage/enc.key"
+    headers = {"user-agent": get_headers(), "referer": referer}
+    req = with_retry(lambda: requests.get(url, headers=headers, timeout=15),
+                     what="enc.key")
+    if req.ok:
+        return "".join([f"{c:02x}" for c in req.content])
+    raise RuntimeError(f"Cannot fetch encryption key: HTTP {req.status_code}")
+
+
+def _get_m3u8_url(json_win_video, json_win_param, add_b1=False):
+    """Build the M3U8 playlist URL on the video host the embed came from."""
+    base = f"https://{json_win_video['host']}/playlist/{json_win_video['id']}"
+    url = f"{base}?"
+    if add_b1:
+        url += "b=1&"
+    url += f"token={json_win_param['token']}&expires={json_win_param['expires']}"
+    if json_win_video.get("can_play_fhd"):
+        url += "&h=1"
+    if json_win_video.get("scz"):
+        url += "&scz=1"
+    url += f"&lang={json_win_video.get('lang', 'it')}"
+    return url
+
+
+# ── Stream resolution ─────────────────────────────────────────────────────────
+#
+# There is one road to a playlist: the source's iframe, then the vixcloud embed
+# page. When Cloudflare answers that page with a challenge the scraper cannot
+# clear, every download of that title stops.
+#
+# A second road was built through vixsrc.to, which serves the same streams keyed
+# by TMDB id — an id the title page hands us for free. It was removed again
+# after testing: vixsrc is now a client-rendered Next.js app whose HTML carries
+# no playlist, no token and no .m3u8 at all, so the data would have to come from
+# reverse-engineered internal calls that break silently on any of their deploys.
+#
+# What is left is the seam. resolve_stream() is where a fallback plugs in, the
+# resolution context (tmdb_id, media type, season, episode) is already threaded
+# from every caller, and fetch_key_from_playlist() can read a key from a
+# playlist that does not put it where vixcloud does. Adding a provider means
+# writing one function and listing it below.
+
+# Hosts a playlist may name as the source of its AES key. The playlist is
+# published by the stream page, so an unconstrained URI would have the panel
+# fetching whatever that page asked it to. Matched on the second-level label,
+# any TLD: vixcloud moved from .co to .cc, and a pin on the full name broke.
+_KEY_HOSTS = ("vixcloud",)
+
+# Fallback providers, tried in order when the primary fails. Each takes
+# (tmdb_id, media_type, season, episode) and returns a StreamSource.
+#
+# Empty: with none registered, resolve_stream() re-raises the primary failure
+# unchanged, which is exactly the behaviour the panel had before any of this.
+_FALLBACK_PROVIDERS: tuple = ()
+
+
+@dataclass
+class StreamSource:
+    """A resolved playlist, whichever provider produced it."""
+
+    m3u8_url: str
+    key_hex: str | None
+    referer: str
+    provider: str
+
+
+class StreamResolutionError(RuntimeError):
+    """Every road to a playlist failed.
+
+    Carries each failure separately, because they say different things: the
+    primary one is what usually needs fixing, and a fallback's is what says
+    whether there was ever a second chance. The message is one Italian sentence
+    because it lands on job.error, on the notification bell and in a webhook.
+    """
+
+    def __init__(self, primary: Exception, fallback: Exception | None):
+        self.primary_error = primary
+        self.fallback_error = fallback
+        detail = f"sorgente principale: {primary}"
+        if fallback is not None:
+            detail += f"; sorgente alternativa: {fallback}"
+        super().__init__(f"Impossibile risolvere lo stream ({detail})")
+
+
+def _key_uri_from(text: str) -> tuple[str | None, str | None]:
+    """The EXT-X-KEY URI in a playlist, and the highest-bandwidth variant in it."""
+    from vistoflow_dl.core.m3u8 import M3U8_Parser
+
+    parser = M3U8_Parser()
+    parser.parse_data(text)
+    keys = parser.keys if isinstance(parser.keys, dict) else {}
+    if keys.get("method") and keys["method"].upper() != "NONE" and keys.get("uri"):
+        return keys["uri"], None
+    return None, parser.get_best_quality()
+
+
+def fetch_key_from_playlist(master_url: str, referer: str) -> str | None:
+    """The AES key a playlist names, or None when it is not encrypted.
+
+    Read rather than assumed. The vixcloud path can assume
+    ``/storage/enc.key`` on the embed's host because that is where it has always been; a
+    different provider has no obligation to agree, and guessing produces a file
+    full of correctly-downloaded garbage rather than an error. Unused while no
+    fallback is registered, and the reason a new one would not have to solve
+    this again.
+    """
+    from vistoflow_dl.core.m3u8 import _fetch_text_with_b1_fallback
+
+    key_uri, best_variant = _key_uri_from(_fetch_text_with_b1_fallback(master_url))
+
+    # The key usually lives on the media playlist rather than the master, so
+    # follow the best variant once if the master carried none.
+    if key_uri is None and best_variant:
+        variant_url = urljoin(master_url, best_variant)
+        key_uri, _ = _key_uri_from(_fetch_text_with_b1_fallback(variant_url))
+        if key_uri:
+            key_uri = urljoin(variant_url, key_uri)
+    elif key_uri:
+        key_uri = urljoin(master_url, key_uri)
+
+    if not key_uri:
+        return None
+
+    parsed = urlparse(key_uri)
+    host = (parsed.hostname or "").lower()
+    labels = host.split(".")
+    if parsed.scheme != "https" or len(labels) < 2 or labels[-2] not in _KEY_HOSTS:
+        raise RuntimeError(f"Chiave di cifratura su un host non consentito: {host or key_uri}")
+
+    headers = {"user-agent": get_headers(), "referer": referer}
+    req = with_retry(lambda: requests.get(key_uri, headers=headers, timeout=15),
+                     what="playlist key")
+    if req.ok:
+        return "".join(f"{c:02x}" for c in req.content)
+    raise RuntimeError(f"Cannot fetch encryption key: HTTP {req.status_code}")
+
+
+def resolve_stream(primary, *, tmdb_id=None, media_type="movie",
+                   season=None, episode=None) -> StreamSource:
+    """Resolve a playlist: the source's own embed, then any fallback provider.
+
+    ``primary`` is a callable returning a StreamSource. When it fails and there
+    is nothing else to try — no provider registered, or no tmdb_id to try one
+    with — the *original* exception is re-raised rather than a complaint about
+    the missing alternative: the caller needs to know Cloudflare blocked them,
+    not that a second road they never had was unavailable.
+    """
+    try:
+        return primary()
+    except Exception as primary_error:
+        if not _FALLBACK_PROVIDERS or not tmdb_id:
+            raise
+
+        logger.warning("Primary stream resolution failed (%s), trying %d fallback(s)",
+                       primary_error, len(_FALLBACK_PROVIDERS))
+        last_error: Exception | None = None
+        for provider in _FALLBACK_PROVIDERS:
+            try:
+                return provider(int(tmdb_id), media_type, season, episode)
+            except Exception as exc:
+                logger.warning("Fallback %s failed: %s", getattr(provider, "__name__", provider), exc)
+                last_error = exc
+        raise StreamResolutionError(primary_error, last_error) from primary_error

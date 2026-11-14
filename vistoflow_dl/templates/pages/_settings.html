@@ -1,0 +1,552 @@
+<!-- ── Settings ─────────────────────────────────────────────────────────────
+     A page, not a dialog. It was a 470-line modal: seven tabs of forms in a
+     scrolling box, with no address, so "open settings and look at the naming
+     tab" was a sentence and not a link.
+
+     The panes stay in the DOM permanently - saving libraries reads its inputs
+     straight out of the document - and the tabs are still switched by hand by
+     switchSettingsTab(). Only the container changed. -->
+<div id="page-settings" style="display:none">
+  <div class="settings-page">
+      <!-- The same head every other page opens with. This one went straight
+           into its tabs, which read as a different application the moment the
+           list pages grew one. -->
+      <div class="pg-head">
+        <div class="pg-head-main">
+          <h1 class="pg-h1">Impostazioni</h1>
+          <p class="pg-sub">
+            Sorgente, librerie e schema dei nomi decidono dove finiscono i file
+            e come si chiamano. Ogni sezione si salva da sé.
+          </p>
+        </div>
+      </div>
+      <ul class="nav nav-tabs mb-3" id="settings-tabs">
+        <li class="nav-item">
+          <a class="nav-link active" href="#" data-settings-tab="sorgente">Sorgente</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="librerie">Librerie</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="associazioni">Associazioni</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="nomi">Nomi</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="download">Download</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="notifiche">Notifiche</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="hook">Hook</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" data-settings-tab="mcp">MCP</a>
+        </li>
+      </ul>
+
+      <div class="settings-pane" data-settings-pane="sorgente">
+      <!-- ── Sorgente ──────────────────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Sorgente</p>
+        <p class="settings-section-hint">
+          Il dominio da cui il pannello cerca e scarica. Salvando viene verificato.
+        </p>
+        <label class="form-label" for="domain-input">Domain</label>
+        <input type="text" id="domain-input" class="form-control" placeholder="streamingcommunityz.parts">
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveDomain" id="save-domain-btn">
+            Verifica e salva
+          </button>
+          <div id="domain-feedback" class="form-text"></div>
+        </div>
+      </div>
+
+      <!-- ── Altri host ────────────────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Altri host</p>
+        <p class="settings-section-hint">
+          Anche AnimeUnity e il server video cambiano dominio. Il server video viene
+          letto dalla sorgente a ogni download; impostalo qui solo se la sorgente
+          continua a indicarne uno che non risponde. Un campo vuoto torna al
+          comportamento automatico. Salvando ogni host viene verificato.
+        </p>
+        <label class="form-label" for="animeunity-host-input">AnimeUnity</label>
+        <input type="text" id="animeunity-host-input" class="form-control" placeholder="www.animeunity.co">
+        <label class="form-label mt-3" for="video-host-input">Server video</label>
+        <input type="text" id="video-host-input" class="form-control" placeholder="Automatico (dalla sorgente)">
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveHosts" id="save-hosts-btn">
+            Verifica e salva
+          </button>
+          <div id="hosts-feedback" class="form-text"></div>
+        </div>
+      </div>
+
+      <!-- ── Recupero automatico del dominio ───────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Recupero automatico</p>
+        <p class="settings-section-hint">
+          Il dominio della sorgente cambia ogni poche settimane. Il pannello pu&ograve;
+          accorgersene e proporre quello nuovo, dopo averlo verificato.
+        </p>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          Il dominio viene letto da una pagina esterna che non controlliamo. Vengono presi in
+          considerazione solo domini di secondo livello con un nome riconosciuto, e solo se
+          rispondono davvero come la sorgente attesa. Con l&rsquo;applicazione automatica attiva
+          nessuno rilegge quella scelta prima che abbia effetto.
+        </p>
+
+        <label class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="domain-auto-check">
+          <span class="form-check-label">Controlla se la sorgente non risponde</span>
+        </label>
+        <label class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="domain-auto-apply">
+          <span class="form-check-label">Applica il dominio trovato senza chiedere</span>
+        </label>
+
+        <label class="form-label mt-3" for="domain-check-interval">
+          Intervallo del controllo (minuti)
+          <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(30&ndash;1440)</span>
+        </label>
+        <input type="number" id="domain-check-interval" class="form-control" min="30" max="1440">
+
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveRecovery" id="save-domain-recovery-btn">
+            Salva
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:checkDomain" id="domain-check-btn">
+            <i class="ti ti-refresh me-1"></i>Controlla ora
+          </button>
+          <div id="domain-recovery-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="librerie" style="display:none">
+      <!-- ── Librerie e cartelle ───────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Librerie multimediali</p>
+        <p class="settings-section-hint">
+          Dove finiscono i file scaricati, una cartella per tipo di contenuto.
+        </p>
+        <p class="settings-section-hint">
+          <strong>Su Docker serve il percorso interno al container</strong>, cioè
+          <code>/app/videos/&lt;cartella nel volume&gt;</code> — per esempio
+          <code>/app/videos/Anime</code>. Il percorso dell&rsquo;host
+          (<code>N:\Jellyfin\Anime</code>, <code>/srv/nfs/storage/Anime</code>) va nel
+          <code>docker-compose.yml</code>, non qui: è la parte a sinistra dei due punti nel
+          volume montato su <code>/app/videos</code>.
+        </p>
+        <div id="libraries-list" class="mb-2"></div>
+        <button class="btn btn-sm btn-outline-secondary" data-action="cfg:addLibrary">
+          <i class="ti ti-plus me-1"></i>Aggiungi libreria
+        </button>
+
+        <label class="form-label mt-3" for="excluded-input">Cartelle escluse</label>
+        <input type="text" id="excluded-input" class="form-control"
+               placeholder="lost+found, .recycle, @eaDir, ...">
+        <div class="form-text">Nomi separati da virgola, ignorati sfogliando le librerie.</div>
+
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveLibraries" id="save-libraries-btn">
+            Salva librerie e cartelle
+          </button>
+          <div id="libraries-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="associazioni" style="display:none">
+      <!-- ── Associazioni titolo ↔ cartella ─────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Titoli e cartelle</p>
+        <p class="settings-section-hint">
+          Quale cartella della libreria contiene quale titolo. Il pannello le registra da solo a
+          fine download, e riconosce le cartelle più vecchie della stessa serie salvate con un
+          anno diverso. Qui si correggono: cambiare ID o cartella sostituisce l&rsquo;associazione,
+          e quella vecchia non viene più proposta. Nessun file viene spostato o rinominato.
+        </p>
+        <div class="lib-toolbar mb-2">
+          <select id="lib-filter" class="form-select form-select-sm" data-change="lib:filter"
+                  aria-label="Filtro">
+            <option value="all">Tutte</option>
+            <option value="matched">Riconosciute per anno</option>
+            <option value="manual">Impostate a mano</option>
+            <option value="missing">Cartella mancante</option>
+          </select>
+          <input type="search" id="lib-search" class="form-control form-control-sm"
+                 placeholder="Cerca titolo o cartella" data-input="lib:filter">
+          <button type="button" class="btn btn-sm btn-outline-secondary" data-action="lib:reconcile"
+                  id="lib-reconcile-btn" title="Cerca le cartelle rinominate o rimosse">
+            <i class="ti ti-refresh me-1"></i>Verifica cartelle
+          </button>
+        </div>
+        <div id="lib-list"></div>
+        <div class="settings-actions">
+          <div id="lib-feedback" class="form-text"></div>
+        </div>
+
+        <details class="lib-rejected mt-3" id="lib-rejected-wrap" hidden>
+          <summary>Associazioni escluse (<span id="lib-rejected-count">0</span>)</summary>
+          <p class="settings-section-hint mt-2">
+            Coppie corrette o rimosse. Il pannello non le ripropone; ripristinarne una la rende di
+            nuovo riconoscibile in automatico.
+          </p>
+          <div id="lib-rejected-list"></div>
+        </details>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="nomi" style="display:none">
+      <!-- ── Schema dei nomi ───────────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Schema dei nomi</p>
+        <p class="settings-section-hint">
+          Come vengono chiamati cartelle e file. Segnaposto disponibili:
+          <code>{title}</code>, <code>{year}</code>, <code>{season}</code>,
+          <code>{season2}</code> (con lo zero), <code>{episode}</code>,
+          <code>{episode2}</code> (con lo zero). Quello che sta fra parentesi quadre compare
+          solo se i segnaposto al suo interno hanno un valore: <code>[ ({year})]</code> sparisce
+          del tutto quando l&rsquo;anno non &egrave; noto.
+        </p>
+        <p class="settings-section-hint">
+          I valori suggeriti nei campi sono quelli predefiniti e seguono la struttura
+          raccomandata dalla <a href="https://jellyfin.org/docs/general/server/media/movies/"
+          target="_blank" rel="noopener noreferrer">documentazione ufficiale di Jellyfin</a>:
+          <code>Film (2020)/Film (2020)</code> e
+          <code>Serie (2019)/Season 01/Serie S01E01</code>, con l&rsquo;estensione decisa dal
+          formato di uscita. Cambiali solo se la tua libreria
+          segue una convenzione diversa: Jellyfin riconosce quella sopra senza configurazione.
+        </p>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          I file gi&agrave; scaricati non vengono rinominati. Continuano a essere riconosciuti
+          come presenti, quindi non verranno riscaricati, ma restano con il nome vecchio finch&eacute;
+          non li rinomini dal gestore file.
+        </p>
+
+        <p class="settings-section-label mt-3 mb-2">Film</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-film_folder">Cartella</label>
+            <input type="text" id="naming-film_folder" class="form-control" data-naming-slot="film_folder" placeholder="{title}[ ({year})]">
+            <div class="form-text" id="naming-preview-film_folder"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-film_file">File</label>
+            <input type="text" id="naming-film_file" class="form-control" data-naming-slot="film_file" placeholder="{title}[ ({year})]">
+            <div class="form-text" id="naming-preview-film_file"></div>
+          </div>
+        </div>
+        <p class="settings-section-label mt-3 mb-2">Serie TV</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-series_folder">Cartella serie</label>
+            <input type="text" id="naming-series_folder" class="form-control" data-naming-slot="series_folder" placeholder="{title}[ ({year})]">
+            <div class="form-text" id="naming-preview-series_folder"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-season_folder">Cartella stagione</label>
+            <input type="text" id="naming-season_folder" class="form-control" data-naming-slot="season_folder" placeholder="Season {season2}">
+            <div class="form-text" id="naming-preview-season_folder"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-episode_file">File episodio</label>
+            <input type="text" id="naming-episode_file" class="form-control" data-naming-slot="episode_file" placeholder="{title} S{season2}E{episode2}">
+            <div class="form-text" id="naming-preview-episode_file"></div>
+          </div>
+        </div>
+        <p class="settings-section-label mt-3 mb-2">Anime</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-anime_folder">Cartella</label>
+            <input type="text" id="naming-anime_folder" class="form-control" data-naming-slot="anime_folder" placeholder="{title}[ ({year})]">
+            <div class="form-text" id="naming-preview-anime_folder"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-anime_season_folder">Cartella stagione</label>
+            <input type="text" id="naming-anime_season_folder" class="form-control" data-naming-slot="anime_season_folder" placeholder="Season 01">
+            <div class="form-text" id="naming-preview-anime_season_folder"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-anime_episode_file">File episodio</label>
+            <input type="text" id="naming-anime_episode_file" class="form-control" data-naming-slot="anime_episode_file" placeholder="{title} S01E{episode2}">
+            <div class="form-text" id="naming-preview-anime_episode_file"></div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="naming-anime_movie_file">File film</label>
+            <input type="text" id="naming-anime_movie_file" class="form-control" data-naming-slot="anime_movie_file" placeholder="{title}">
+            <div class="form-text" id="naming-preview-anime_movie_file"></div>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveNaming" id="save-naming-btn">
+            Salva
+          </button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:resetNaming">
+            Ripristina predefiniti
+          </button>
+          <div id="naming-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="download" style="display:none">
+      <!-- ── Performance download ──────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Download</p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-max-concurrent">
+              Download contemporanei
+              <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(1–32)</span>
+            </label>
+            <input type="number" id="setting-max-concurrent" class="form-control" min="1" max="32" value="3">
+            <div class="form-text">Suggerito: 2–4. Valori alti aumentano l'uso di rete e RAM.</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-max-workers">
+              Segmenti in parallelo
+              <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(1–128)</span>
+            </label>
+            <input type="number" id="setting-max-workers" class="form-control" min="1" max="128" value="16">
+            <div class="form-text">Tetto massimo complessivo del pannello, non per singolo download. Se la fonte risponde 503 il pannello scende sotto questo valore da solo e risale quando torna a servire. Suggerito: 8–16.</div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-watch-interval">
+              Controllo serie seguite
+              <span style="color:var(--text-dim);font-size:10px;text-transform:none;font-weight:400;letter-spacing:0;margin-left:4px">(15–1440 min)</span>
+            </label>
+            <input type="number" id="setting-watch-interval" class="form-control" min="15" max="1440" value="240">
+            <div class="form-text">Ogni quanto cercare nuovi episodi. Suggerito: 240 (4 ore).</div>
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:savePerf" id="save-perf-btn">
+            Salva performance
+          </button>
+          <div id="perf-settings-feedback" class="form-text"></div>
+        </div>
+      </div>
+
+      <!-- ── Formato di uscita ─────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Formato di uscita</p>
+        <p class="settings-section-hint">
+          In quale contenitore finiscono i file scaricati, e dove finiscono i sottotitoli.
+          Il video non viene mai ricodificato: la sorgente &egrave; gi&agrave; H.264 con audio AAC,
+          che entrambi i contenitori reggono cos&igrave; come sono, quindi cambiare questa
+          impostazione non allunga di un secondo i download.
+        </p>
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-output-container">Contenitore</label>
+            <select id="setting-output-container" class="form-select">
+              <option value="mkv">MKV</option>
+              <option value="mp4">MP4</option>
+            </select>
+            <div class="form-text">
+              MKV regge qualsiasi traccia ed &egrave; il predefinito. Scegli MP4 se guardi su
+              dispositivi che non aprono gli MKV: parecchie smart TV non recenti, Chromecast
+              e console.
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="setting-subtitle-mode">Sottotitoli</label>
+            <select id="setting-subtitle-mode" class="form-select">
+              <option value="embed">Integrati nel file</option>
+              <option value="external">File .vtt separati</option>
+            </select>
+            <div class="form-text">
+              Integrati in un MP4 significa convertiti in <code>mov_text</code>, che perde
+              colori, grassetti e posizionamento. I file separati evitano la conversione:
+              Jellyfin li riconosce lo stesso, perch&eacute; prendono il nome del video.
+            </div>
+          </div>
+        </div>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          I file gi&agrave; scaricati non vengono convertiti: restano nel contenitore con cui
+          sono stati creati, e continuano a contare come presenti, quindi non verranno
+          riscaricati da soli. Se invece riscarichi un titolo di proposito, la copia nel
+          vecchio contenitore viene sostituita, non affiancata.
+        </p>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveOutput" id="save-output-btn">
+            Salva formato
+          </button>
+          <div id="output-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="notifiche" style="display:none">
+      <!-- ── Notifiche ─────────────────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Notifiche</p>
+        <p class="settings-section-hint">
+          Inoltra le notifiche del pannello a Discord, Telegram, ntfy, email e altri servizi.
+          Un canale è una URL Apprise, ad esempio
+          <code>discord://id_webhook/token_webhook</code> oppure <code>tgram://token_bot/id_chat</code>.
+          <a href="https://github.com/caronc/apprise/wiki#notification-services" target="_blank"
+             rel="noopener noreferrer">Elenco completo dei servizi e formato delle URL</a>.
+        </p>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          Questi canali sono <strong>del pannello, non del singolo utente</strong>: ricevono gli
+          eventi di <em>tutti</em>, comprese le richieste e i download avviati da altri. Pensali
+          come un canale di amministrazione — un webhook su un canale Discord privato, non un
+          gruppo condiviso con chi usa il pannello. Con «Tutti gli eventi» attivo su una libreria
+          usata da più persone il volume può essere notevole: conviene scegliere solo gli eventi
+          che ti interessano davvero.
+        </p>
+        <div id="notif-channels-list" class="mb-2"></div>
+
+        <div id="notif-channel-form" class="row g-2 mb-2" style="display:none">
+          <div class="col-sm-4">
+            <input type="text" id="notif-channel-name" class="form-control" placeholder="Nome (es. Discord admin)">
+          </div>
+          <div class="col-sm-6">
+            <input type="text" id="notif-channel-url" class="form-control" placeholder="discord://id_webhook/token_webhook">
+          </div>
+          <div class="col-sm-2 d-grid">
+            <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveChannel"
+                    id="notif-channel-save-btn">Aggiungi</button>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-action="cfg:toggleChannelForm"
+                id="notif-channel-add-btn">
+          <i class="ti ti-plus me-1"></i>Aggiungi canale
+        </button>
+        <div class="settings-actions">
+          <div id="notif-channels-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="hook" style="display:none">
+      <!-- ── Webhook ───────────────────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Webhook</p>
+        <p class="settings-section-hint">
+          Una chiamata HTTP quando un download finisce. Nel corpo si possono usare
+          <code>{title}</code>, <code>{path}</code>, <code>{status}</code>, <code>{type}</code>,
+          <code>{season}</code>, <code>{episode}</code>, <code>{year}</code> e
+          <code>{error}</code>. Con il corpo vuoto viene inviato un JSON con tutti i campi.
+        </p>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          Un webhook pu&ograve; puntare anche a servizi della rete locale. Il pannello non
+          restituisce mai la risposta ricevuta, solo l&rsquo;esito: chi configura un hook sa se ha
+          funzionato, non cosa ha risposto l&rsquo;altro capo.
+        </p>
+
+        <div id="hooks-list" class="mb-2"></div>
+
+        <div id="hook-form" class="row g-2 mb-2" style="display:none">
+          <div class="col-sm-4">
+            <input type="text" id="hook-name" class="form-control" placeholder="Nome (es. Media server)">
+          </div>
+          <div class="col-sm-5">
+            <input type="text" id="hook-url" class="form-control" placeholder="http://192.168.1.10:8096/...">
+          </div>
+          <div class="col-sm-3">
+            <select id="hook-method" class="form-select">
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="GET">GET</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <textarea id="hook-body" class="form-control" rows="2"
+                      placeholder="Corpo, opzionale."></textarea>
+          </div>
+          <div class="col-12 d-flex justify-content-end">
+            <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveHook" id="hook-save-btn">
+              Aggiungi
+            </button>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-action="cfg:toggleHookForm" id="hook-add-btn">
+          <i class="ti ti-plus me-1"></i>Aggiungi webhook
+        </button>
+        <div class="settings-actions">
+          <div id="hooks-feedback" class="form-text"></div>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="mcp" style="display:none">
+      <!-- ── Model Context Protocol ────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Server MCP</p>
+        <p class="settings-section-hint">
+          Permette a un agente AI (Claude Code, Cursor, &hellip;) di cercare titoli, avviare
+          download, seguire serie e gestire le richieste. Il server risponde all&rsquo;indirizzo
+          del pannello, sotto <code>/mcp</code>: nessuna porta in pi&ugrave; da aprire.
+        </p>
+        <p class="settings-section-hint settings-warn">
+          <i class="ti ti-alert-triangle me-1"></i>
+          L&rsquo;agente agisce come l&rsquo;utente che ha generato il token, con i suoi permessi:
+          chi ha il token pu&ograve; fare tutto ci&ograve; che quell&rsquo;utente pu&ograve; fare.
+        </p>
+        <label class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="setting-mcp-enabled">
+          <span class="form-check-label">Abilita il server MCP</span>
+        </label>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="cfg:saveMcp" id="save-mcp-btn">
+            Salva
+          </button>
+          <div id="mcp-feedback" class="form-text"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <p class="settings-section-label">Token</p>
+        <p class="settings-section-hint" id="mcp-token-status"></p>
+        <div id="mcp-token-once" class="mb-2" style="display:none">
+          <div class="input-group">
+            <input type="text" id="mcp-token-display" class="form-control font-monospace" readonly>
+            <button class="btn btn-outline-secondary" type="button" data-action="cfg:copyMcpToken" title="Copia token">
+              <i class="ti ti-copy"></i>
+            </button>
+          </div>
+          <div class="form-text settings-warn">
+            Copialo adesso: il pannello ne conserva solo l&rsquo;impronta e non potr&agrave; mostrarlo di nuovo.
+          </div>
+        </div>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="cfg:regenerateMcpToken" id="mcp-regen-btn">
+            Genera nuovo token
+          </button>
+          <button type="button" class="btn btn-outline-danger btn-sm" data-action="cfg:revokeMcpToken" id="mcp-revoke-btn" style="display:none">
+            Revoca
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <p class="settings-section-label">Configurazione del client</p>
+        <p class="settings-section-hint">
+          Trasporto Streamable HTTP, con il token nell&rsquo;header <code>Authorization</code>.
+          Dietro un reverse proxy usa l&rsquo;indirizzo pubblico del pannello, in HTTPS.
+        </p>
+        <pre class="settings-snippet"><code id="mcp-config-snippet"></code></pre>
+        <div class="settings-actions">
+          <button class="btn btn-outline-secondary btn-sm" type="button" data-action="cfg:copyMcpSnippet">
+            <i class="ti ti-copy me-1"></i>Copia
+          </button>
+        </div>
+      </div>
+      </div>
+  </div>
+</div>

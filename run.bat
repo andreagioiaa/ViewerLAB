@@ -10,7 +10,7 @@ if not exist "%VENV_PY%" (
     if errorlevel 1 goto :error
 )
 
-"%VENV_PY%" -c "import PyQt6, vlc, httpx, pydantic, bs4, yaml, tenacity, dotenv, lxml.etree, certifi" >nul 2>&1
+"%VENV_PY%" -c "import PySide6, vlc, httpx, pydantic, bs4, yaml, tenacity, dotenv, lxml.etree, certifi, fastapi, uvicorn, apprise, cryptography, m3u8, imageio_ffmpeg" >nul 2>&1
 if errorlevel 1 (
     echo [VistoFlow] Installo le dipendenze...
     "%VENV_PY%" -m pip install --upgrade pip

@@ -1,13 +1,12 @@
-# VistoFlow Pro - dipendenze runtime
-PyQt6>=6.7
+# VistoFlow - dipendenze runtime
+# Interfaccia (welcome, Locale, Online) e browser integrato QtWebEngine
+PySide6>=6.12,<6.13
+
+# Modalità Locale: player VLC (serve VLC installato sul sistema)
 python-vlc>=3.0
 certifi>=2024.0
 
-# Browser integrato: motore isolato in un processo separato.
-# PySide6 include QtWebEngine e non viene importato nel processo PyQt6.
-PySide6>=6.12,<6.13
-
-# Motore online integrato: canali, resolver, metadati TMDB
+# Motore online: canali, resolver, metadati TMDB, fonti VistoFlow
 httpx>=0.27,<1
 beautifulsoup4>=4.12
 lxml>=5.2
@@ -16,5 +15,25 @@ PyYAML>=6.0
 tenacity>=8.3
 python-dotenv>=1.0
 
-# Opzionale: richiesto solo da build_exe.py per creare l'eseguibile
-# pyinstaller
+# Pannello di download (ex StreamingCommunity-downloader, pacchetto vistoflow_dl)
+requests
+tqdm
+rich
+random-user-agent
+ffmpeg-python
+imageio-ffmpeg
+cryptography>=42
+filelock>=3.12.0
+m3u8
+fastapi
+uvicorn[standard]
+jinja2
+cloudscraper
+apprise
+mcp>=2.3,<3
+
+# Modalità Online: mpv NON è un pacchetto Python. Imposta MPV_PATH oppure
+# copia mpv.exe in bin/ (vedi bin/README.md).
+
+# Solo per creare l'eseguibile (con Python 3.14 serve PyInstaller >= 6.16):
+# pyinstaller>=6.16
