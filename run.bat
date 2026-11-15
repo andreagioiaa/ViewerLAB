@@ -1,30 +1,5 @@
 @echo off
-setlocal
-cd /d "%~dp0"
-
-set "VENV_PY=%~dp0.venv\Scripts\python.exe"
-
-if not exist "%VENV_PY%" (
-    echo [VistoFlow] Creo l'ambiente virtuale in .venv...
-    python -m venv .venv
-    if errorlevel 1 goto :error
-)
-
-"%VENV_PY%" -c "import PySide6, vlc, httpx, pydantic, bs4, yaml, tenacity, dotenv, lxml.etree, certifi, fastapi, uvicorn, apprise, cryptography, m3u8, imageio_ffmpeg" >nul 2>&1
-if errorlevel 1 (
-    echo [VistoFlow] Installo le dipendenze...
-    "%VENV_PY%" -m pip install --upgrade pip
-    "%VENV_PY%" -m pip install -r requirements.txt
-    if errorlevel 1 goto :error
-)
-
-"%VENV_PY%" main.py
-if errorlevel 1 goto :error
-exit /b 0
-
-:error
-echo.
-echo [VistoFlow] Avvio non riuscito.
-echo Controlla i messaggi sopra oppure esegui setup.bat.
-pause
-exit /b 1
+rem Avvia VistoFlow: prepara Python 3.14, .venv, dipendenze, VLC e mpv se mancano.
+rem   run.bat -Console   mostra la console con gli errori
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\bootstrap.ps1" %*
+if errorlevel 1 pause

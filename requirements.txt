@@ -1,3 +1,5 @@
+# Python 3.14 (64 bit). Versioni esatte testate: constraints.txt
+# Installazione: run.bat / setup.bat (vedi tools/bootstrap.ps1)
 # VistoFlow - dipendenze runtime
 # Interfaccia (welcome, Locale, Online) e browser integrato QtWebEngine
 PySide6>=6.12,<6.13

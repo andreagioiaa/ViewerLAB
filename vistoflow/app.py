@@ -89,6 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.data_dir:
         os.environ["VISTOFLOW_DATA"] = args.data_dir
     configure_logging(args.log_level)
+    # Senza console (pythonw) un errore non gestito sparirebbe: finisce nel log.
+    sys.excepthook = lambda kind, value, tb: LOGGER.critical(
+        "Errore non gestito", exc_info=(kind, value, tb)
+    )
     i18n.load_language()  # prima di importare le finestre (costanti tradotte)
 
     if args.self_test:

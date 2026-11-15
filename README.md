@@ -198,42 +198,47 @@ dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md
 
 ## Avvio
 
-Richiede **Python 3.11+** e VLC installato. La via più semplice è il launcher:
-crea `.venv` al primo avvio, installa le dipendenze e usa direttamente
-`.venv\Scripts\python.exe`. **Non serve attivare manualmente l'ambiente
-virtuale** (né `Activate.bat` né `Activate.ps1`).
+Windows 10 o 11. Basta un doppio clic su **`run.bat`**: al primo avvio prepara
+tutto da solo, e dai successivi parte in pochi secondi.
+
+- **Python 3.14** (64 bit): lo cerca e, se manca, propone di installarlo con
+  `winget` (solo per il tuo utente). Altre versioni non vanno bene: con Python
+  3.15 alcune librerie si rompono (`'lazy_import' object is not callable`). Un
+  `.venv` creato con un'altra versione viene ricreato.
+- **Librerie**: installa le versioni esatte testate (`requirements.txt` +
+  `constraints.txt`) e le reinstalla solo quando quei file cambiano.
+- **VLC** (obbligatorio, player della Libreria) e **mpv** (consigliato, player
+  delle fonti online): se mancano propone di installarli con `winget`.
+- Poi avvia VistoFlow **senza finestra del cmd**. Se l'app si chiude subito
+  con un errore, il cmd resta aperto e mostra le ultime righe del log.
 
 ```bat
 run.bat
 ```
 
-In PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\run.ps1
-```
-
-Per preparare o aggiornare l'ambiente senza avviare l'app:
+Altri modi:
 
 ```bat
+run.bat -Console
 setup.bat
 ```
 
-Equivalente manuale, se preferisci:
+`-Console` mostra la console con gli errori completi; `setup.bat` prepara
+l'ambiente senza avviare l'app. In PowerShell:
+`powershell -ExecutionPolicy Bypass -File .\run.ps1`. Tutto il lavoro lo fa
+[`tools/bootstrap.ps1`](tools/bootstrap.ps1).
+
+Se il progetto sta in una cartella dal percorso molto lungo (oltre ~70
+caratteri), l'ambiente va in `%LOCALAPPDATA%\VistoFlow\venv` invece che in
+`.venv`: alcuni file di PySide6 supererebbero il limite di 260 caratteri di
+Windows.
+
+Test (strumenti di sviluppo a parte):
 
 ```bat
-python -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe main.py
-```
-
-Test del motore online e dei resolver:
-
-```bat
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt -c constraints.txt
 .venv\Scripts\python.exe -m pytest
 ```
-
-Serve VLC installato sul sistema (python-vlc usa la libreria di VLC).
 
 ### Configurazione TMDB e canali
 

@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+# Script Windows: CRLF anche scaricando lo ZIP da GitHub
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
