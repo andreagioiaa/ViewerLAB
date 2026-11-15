@@ -129,6 +129,8 @@ class MediaManager:
             config_path = os.path.join(_app_dir(), config_path)
         self.config_path = config_path
         self.data = self._load_config()
+        # cartelle «Serie TV»: ogni loro sottocartella è una serie (vedi _series_from_folders)
+        self.series_roots: list[str] = []
 
     # ------------------------------------------------------------------ config
     def _load_config(self):
@@ -311,6 +313,46 @@ class MediaManager:
             "titolo": title,
             "original_name": filename,
         }
+
+    def _series_from_folders(self, filepath):
+        """Episodio dentro una cartella «Serie TV»: la serie è la sua prima sottocartella.
+
+        Regge i nomi che da soli non dicono la serie («S04e07», «8.mp4»,
+        «La casa di carta EP.01 S01», «Dragon Ball Z - 001 - Titolo»). Le
+        cartelle intermedie diventano la stagione («Stagione 2») o un gruppo
+        («1-DRAGONBALL Z / 2-SAGA DI FREEZER»), ordinato per i numeri in testa.
+        """
+        path = self._path_key(filepath)
+        root = next((r for r in self.series_roots if path.startswith(self._path_key(r) + os.sep)), None)
+        if root is None:
+            return None
+        parts = os.path.relpath(os.path.abspath(filepath), os.path.abspath(root)).split(os.sep)
+        if len(parts) < 2:
+            return None  # file sciolto nella cartella: decide il nome
+        middle = parts[1:-1]
+        parsed = self.parse_filename(parts[-1], filepath) or {}
+        name = _clean_text(os.path.splitext(self.get_clean_name(parts[-1]))[0])
+
+        season = parsed.get("stagione")
+        season_folders = [re.match(r"^(?:stagione|season|s)\s*(\d{1,2})$", f.strip(), re.IGNORECASE)
+                          for f in middle]
+        if all(season_folders) and season_folders:
+            season = season or _to_int_str(season_folders[-1].group(1))
+            group, group_key = "", ()
+        else:
+            group = " › ".join(_clean_title(re.sub(r"^\d+\s*[-.]\s*", "", f)) or f for f in middle)
+            group_key = tuple(int(m.group(1)) if (m := re.match(r"^(\d+)", f)) else 10 ** 6 for f in middle)
+        if season is None:
+            found = re.search(r"(?:^|\s)S(\d{1,2})(?=\s|E|$)", name, re.IGNORECASE)
+            season = _to_int_str(found.group(1)) if found else "1"
+        episode = parsed.get("episodio")
+        if episode is None:
+            found = (re.search(r"\bEP?\s*(\d{1,4})\b", name, re.IGNORECASE)
+                     or re.search(r"\b(\d{1,4})\b", name))
+            episode = _to_int_str(found.group(1)) if found else "1"
+        title = parsed.get("titolo") or _clean_title(name) or f"Episodio {episode}"
+        return {"serie": _clean_title(parts[0]) or parts[0], "stagione": season, "episodio": episode,
+                "titolo": title, "gruppo": group, "gruppo_key": group_key}
 
     @staticmethod
     def _path_key(filepath):
@@ -502,9 +544,10 @@ class MediaManager:
     def describe(self, filepath):
         """Restituisce un dizionario pronto per la UI."""
         filename = os.path.basename(filepath)
-        parsed = self.parse_filename(filename, filepath) or {}
         meta = self.get_meta(filepath)
         kind = meta.get("kind") if meta.get("kind") in KINDS else None
+        from_folders = self._series_from_folders(filepath) if kind in (None, "serie") else None
+        parsed = from_folders or self.parse_filename(filename, filepath) or {}
         if kind is None:
             kind = "serie" if parsed else "film"
 
@@ -537,6 +580,8 @@ class MediaManager:
             "series": series,
             "season": season,
             "episode": episode,
+            "group": parsed.get("gruppo", ""),  # es. «DRAGONBALL Z › SAGA DI FREEZER»
+            "group_key": parsed.get("gruppo_key", ()),
             "title": title,
             "tags": self.get_tags(filepath),
             "cover": self.get_cover(kind, series),

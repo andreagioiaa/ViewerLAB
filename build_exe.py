@@ -42,6 +42,29 @@ def main(argv: list[str] | None = None) -> int:
         print("PyInstaller non installato: esegui 'pip install pyinstaller'.", file=sys.stderr)
         return 1
 
+    # L'exe tiene i dati della libreria accanto a sé: la build cancella dist/ViewerLAB,
+    # quindi cronologia e copertine di chi lo usa da lì vengono messe da parte e rimesse.
+    kept = ROOT / "build_keep"
+    app_dir = ROOT / "dist" / "ViewerLAB"
+    for name in USER_DATA:
+        if (app_dir / name).exists():
+            kept.mkdir(exist_ok=True)
+            shutil.move(str(app_dir / name), str(kept / name))
+    try:
+        return _build(args)
+    finally:
+        for name in USER_DATA:
+            if (kept / name).exists():
+                app_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(kept / name), str(app_dir / name))
+        if kept.exists() and not any(kept.iterdir()):
+            kept.rmdir()
+
+
+USER_DATA = ("visto_settings.json", "covers")
+
+
+def _build(args) -> int:
     if args.clean:
         for name in ("build", "dist"):
             target = ROOT / name

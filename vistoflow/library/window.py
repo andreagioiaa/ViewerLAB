@@ -258,12 +258,14 @@ class MediaDelegate(QStyledItemDelegate):
 class ViewerLABApp(QMainWindow):
     fullscreen_changed = Signal(bool)
     imdb_ready = Signal(str, object)  # chiave raccolta, Title | None (dal thread)
+    covers_changed = Signal()  # una locandina IMDb è diventata la copertina di una raccolta
 
-    def __init__(self):
+    def __init__(self, series_roots=()):
         super().__init__()
         self._imdb_pending = set()
         self.imdb_ready.connect(self._on_imdb_ready)
         self.manager = MediaManager()
+        self.manager.series_roots = list(series_roots)  # prima della prima lettura dei file
         self.records = []
         self.collection = None          # {"kind": "film"/"serie", "name": str}
         self.current = None             # record selezionato
@@ -1841,8 +1843,14 @@ class ViewerLABApp(QMainWindow):
         try:
             if not self.manager.get_cover(kind, name) and self.manager.set_cover(kind, name, path):
                 self.manager.save_config()
-                self._cover_cache.clear()
-                self.reload(select_first=False)
+                # solo la copertina di questa raccolta: rileggere tutto il disco per ogni
+                # locandina in arrivo bloccava l'app per minuti con centinaia di titoli
+                cover = self.manager.get_cover(kind, name)
+                for record in self.records:
+                    if record["kind"] == kind and record["series"] == name:
+                        record["cover"] = cover
+                        record["cover_pixmap"] = self._cover_pixmap(cover, 36, 50)
+                self.covers_changed.emit()
         finally:
             try:
                 os.remove(path)

@@ -95,6 +95,11 @@ _GRADIENTS = (
 )
 
 
+def _episode_order(record: dict) -> tuple:
+    """Gruppo di cartelle (es. le saghe), stagione, episodio."""
+    return (tuple(record.get("group_key") or ()), _int_or(record["season"]), _int_or(record["episode"]))
+
+
 def _int_or(value, default: int = 1) -> int:
     """Stagione/episodio della libreria («01», "", None) → numero."""
     try:
@@ -461,7 +466,7 @@ class MainWindow(QMainWindow):
         self._watchlist_found = 0
 
         # la libreria locale (ex ViewerLAB) è un widget della finestra unica
-        self.library = ViewerLABApp()
+        self.library = ViewerLABApp(self._series_roots())
         self.library.setWindowFlags(Qt.WindowType.Widget)
         self.library.fullscreen_changed.connect(self._on_library_fullscreen)
         self._strip_library()
@@ -472,6 +477,7 @@ class MainWindow(QMainWindow):
         self._library_refresh.setInterval(1500)  # le locandine IMDb arrivano a raffica
         self._library_refresh.timeout.connect(self._refresh_library_home)
         self.library.imdb_ready.connect(lambda *_a: self._library_refresh.start())
+        self.library.covers_changed.connect(self._library_refresh.start)
 
         self.rail = self._build_rail()
         self.pages = QStackedWidget()
@@ -1032,6 +1038,9 @@ class MainWindow(QMainWindow):
                 for lib in read_data().get("libraries", []) if lib.get("path")}
         return dirs or {os.path.normcase(os.path.normpath(str(VIDEOS_DIR))): ""}
 
+    def _series_roots(self) -> list[str]:
+        return [path for path, kind in self._download_dirs().items() if kind == "serie"]
+
     def _downloaded_records(self) -> list[dict]:
         dirs = self._download_dirs()
         found = []
@@ -1045,6 +1054,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_library_home(self, rescan: bool = False) -> None:
         if rescan:
+            self.library.manager.series_roots = self._series_roots()  # la cartella può essere cambiata
             added = [self.library.manager.add_library_path(p) for p in self._download_dirs()
                      if os.path.isdir(p)]
             self.library.reload()
@@ -1086,7 +1096,7 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _next_episode(records: list[dict]) -> dict:
         """L'episodio iniziato, altrimenti il primo non visto, altrimenti il primo."""
-        ordered = sorted(records, key=lambda r: (_int_or(r["season"]), _int_or(r["episode"])))
+        ordered = sorted(records, key=_episode_order)
         return (next((r for r in ordered if r["status"] == "iniziato"), None)
                 or next((r for r in ordered if r["status"] != "visto"), ordered[0]))
 
@@ -1106,13 +1116,16 @@ class MainWindow(QMainWindow):
         records = self._library_view[kind][grid.row(entry)]
         menu = QMenu(self)
         if kind == "serie":
-            seasons: dict[int, QMenu] = {}
-            for record in sorted(records, key=lambda r: (_int_or(r["season"]), _int_or(r["episode"]))):
+            seasons: dict[tuple, QMenu] = {}
+            for record in sorted(records, key=_episode_order):
                 season = _int_or(record["season"])
-                if season not in seasons:
-                    seasons[season] = menu.addMenu(_("Stagione {n}").format(n=season))
+                group = record.get("group", "")
+                key = (group, season)
+                if key not in seasons:
+                    label = _("Stagione {n}").format(n=season)
+                    seasons[key] = menu.addMenu(group if group else label)
                 mark = "✓  " if record["status"] == "visto" else ""
-                seasons[season].addAction(
+                seasons[key].addAction(
                     f"{mark}E{_int_or(record['episode']):02d}  {record['title']}",
                     lambda r=record: self._play_library_record(r))
         else:
