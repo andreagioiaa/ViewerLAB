@@ -1,7 +1,7 @@
 # Pannello di download (vistoflow_dl)
 
 Note di progetto dell'upstream StreamingCommunity-downloader (licenza MIT, vedi
-`vistoflow_dl/LICENSE`), integrato in VistoFlow come pacchetto `vistoflow_dl`
+`vistoflow_dl/LICENSE`), integrato in ViewerLAB come pacchetto `vistoflow_dl`
 (ex `app/`). Differenze rispetto al testo che segue:
 
 - **Niente Jellyfin**: nessun wizard, login, import utenti, permesso
@@ -9,12 +9,12 @@ Note di progetto dell'upstream StreamingCommunity-downloader (licenza MIT, vedi
   `auth_mode=open`. Le regole sugli account (coda richieste, sessioni)
   descrivono codice dormiente, ancora coperto dai test in `tests/downloader`.
 - **Niente controllo aggiornamenti né updater Docker** (`updates.py`, `updater/`):
-  VistoFlow è un'app desktop.
+  ViewerLAB è un'app desktop.
 - Avvio: `vistoflow_dl/desktop.py` (uvicorn in un thread su 127.0.0.1, porta
   casuale) e pagina Qt `vistoflow/download_page.py`. Un token per sessione
   (`VISTOFLOW_DL_TOKEN`, cookie `vf_launch`) tiene fuori le altre pagine web locali.
-- Dati in `%LOCALAPPDATA%\VistoFlow\download\` (`panel.db`, `data.json`,
-  `schedule.json`, `tmp/`); cartella video predefinita `~/Videos/VistoFlow`.
+- Dati in `%LOCALAPPDATA%\ViewerLAB\download\` (`panel.db`, `data.json`,
+  `schedule.json`, `tmp/`); cartella video predefinita `~/Videos/ViewerLAB`.
 
 ---
 

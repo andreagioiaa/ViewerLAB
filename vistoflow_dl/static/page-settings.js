@@ -958,7 +958,22 @@ registerActions({
   'cfg:copyMcpSnippet':   () => _copyWithToast(document.getElementById('mcp-config-snippet').textContent, 'Configurazione'),
   'cfg:regenerateMcpToken': () => regenerateMcpToken(),
   'cfg:revokeMcpToken':   () => revokeMcpToken(),
+  // ViewerLAB: the app opens its own dialogs (folder, file, restart)
+  'vl:chooseRoot':        () => console.info('viewerlab:choose-root'),
+  'vl:importWatchlist':   () => console.info('viewerlab:import-watchlist'),
+  'vl:saveLanguage':      () => console.info('viewerlab:language:' + document.getElementById('vl-language').value),
 });
+
+// Called by ViewerLAB: shows its sections and fills them.
+function viewerlabSettings(state) {
+  document.body.classList.add('viewerlab');
+  document.getElementById('vl-library-root').textContent = state.libraryRoot || 'Non impostata';
+  const select = document.getElementById('vl-language');
+  select.innerHTML = Object.entries(state.languages).map(([code, name]) =>
+    `<option value="${escapeHtml(code)}">${escapeHtml(name)}</option>`).join('');
+  select.value = state.language;
+  document.getElementById('vl-watchlist-info').textContent = state.watchlistInfo || '';
+}
 
 
 // The tab is a path segment, not a query parameter: it names which page of

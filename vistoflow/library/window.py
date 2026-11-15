@@ -1,4 +1,4 @@
-"""Libreria di VistoFlow - gestore di film e serie TV con player VLC integrato."""
+"""Libreria di ViewerLAB - gestore di film e serie TV con player VLC integrato."""
 
 import os
 import sys
@@ -255,7 +255,7 @@ class MediaDelegate(QStyledItemDelegate):
         painter.restore()
 
 
-class VistoFlowApp(QMainWindow):
+class ViewerLABApp(QMainWindow):
     fullscreen_changed = Signal(bool)
     imdb_ready = Signal(str, object)  # chiave raccolta, Title | None (dal thread)
 
@@ -284,7 +284,7 @@ class VistoFlowApp(QMainWindow):
         self._last_save = 0.0
         self._building = False
 
-        self.setWindowTitle("VistoFlow")
+        self.setWindowTitle("ViewerLAB")
         self.setWindowIcon(make_app_icon())
         self.resize(1360, 900)
         self.setMinimumSize(1040, 680)
@@ -352,7 +352,7 @@ class VistoFlowApp(QMainWindow):
 
         brand = QVBoxLayout()
         brand.setSpacing(0)
-        title = QLabel("VistoFlow <span style='color:#2ecc71'>Libreria</span>")
+        title = QLabel("ViewerLAB <span style='color:#2ecc71'>Libreria</span>")
         title.setObjectName("AppTitle")
         title.setTextFormat(Qt.TextFormat.RichText)
         subtitle = QLabel("Film, serie TV, copertine e TAG in un'unica libreria")
@@ -1158,11 +1158,11 @@ class VistoFlowApp(QMainWindow):
         else:
             meta = record["title"]
         self.player.play_file(record["path"], start=start, meta=meta)
-        self.setWindowTitle(f"VistoFlow — {meta}")
+        self.setWindowTitle(f"ViewerLAB — {meta}")
 
     # --------------------------------------------------------- ricerca online
     def open_online_search(self):
-        """Apre la ricerca sui canali online dentro VistoFlow."""
+        """Apre la ricerca sui canali online dentro ViewerLAB."""
         if self._online_dialog is None:
             self._online_dialog = OnlineSearchDialog(self.manager, self)
             self._online_dialog.play_requested.connect(self._play_online_stream)
@@ -1202,7 +1202,7 @@ class VistoFlowApp(QMainWindow):
         Il motore gira in un processo PySide6 separato e la sua finestra viene
         incorporata nel dialogo. Il browser è volutamente generico: non risolve
         né estrae flussi e non aggira protezioni. Serve per usare il player del
-        sito con la propria sessione, restando dentro VistoFlow.
+        sito con la propria sessione, restando dentro ViewerLAB.
         """
         url = str(url or "").strip()
         if self._browser_dialog is None:
@@ -1282,7 +1282,7 @@ class VistoFlowApp(QMainWindow):
                 self.open_player()
             meta = f"{title} · Web Stream"
             self.player.play_url(url, headers=headers, meta=meta)
-            self.setWindowTitle(f"VistoFlow — {meta}")
+            self.setWindowTitle(f"ViewerLAB — {meta}")
 
     def _play_online_stream(self, request):
         """Riproduce un flusso online e conserva i dati per rigenerarlo."""
@@ -1307,7 +1307,7 @@ class VistoFlowApp(QMainWindow):
         quality = f"  ·  {stream.quality}" if stream.quality else ""
         meta = f"{request.title}{quality}  ·  {stream.resolver_name}"
         self.player.play_url(stream.url, headers=stream.headers, meta=meta)
-        self.setWindowTitle(f"VistoFlow — {meta}")
+        self.setWindowTitle(f"ViewerLAB — {meta}")
 
     # --------------------------------------------------- refresh link scaduti
     def _on_player_error(self, _message):
@@ -1421,7 +1421,7 @@ class VistoFlowApp(QMainWindow):
             "Riproduttore chiuso — più spazio per selezionare i file"
         )
         self.player_bar.show()
-        self.setWindowTitle("VistoFlow")
+        self.setWindowTitle("ViewerLAB")
         available = max(220, self.height() - 120)
         self.right_splitter.setSizes([0, self.player_bar.height(), available])
         self.file_list.setFocus()

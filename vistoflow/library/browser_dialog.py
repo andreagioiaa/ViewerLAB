@@ -1,4 +1,4 @@
-"""Browser integrato per aprire pagine web senza lasciare VistoFlow.
+"""Browser integrato per aprire pagine web senza lasciare ViewerLAB.
 
 Il browser è volutamente un normale Chromium/WebEngine: visualizza la pagina e
 lascia all'utente login, cookie e interazioni. Non estrae flussi protetti e non
@@ -88,7 +88,7 @@ class WebBrowserDialog(QDialog):
         self._load_timer.setInterval(30000)
         self._load_timer.timeout.connect(self._on_load_timeout)
 
-        self.setWindowTitle("Browser · VistoFlow")
+        self.setWindowTitle("Browser · ViewerLAB")
         self.resize(980, 700)
         self.setMinimumSize(720, 500)
 
@@ -196,7 +196,7 @@ class WebBrowserDialog(QDialog):
         self.lbl_stream_info = QLabel("🎬 Flusso .m3u8 rilevato")
         self.lbl_stream_info.setObjectName("StreamBannerText")
 
-        self.btn_play_stream = QPushButton("▶ Riproduci nel player VistoFlow")
+        self.btn_play_stream = QPushButton("▶ Riproduci nel player ViewerLAB")
         self.btn_play_stream.setObjectName("Primary")
         self.btn_play_stream.setToolTip(
             "Invia il flusso catturato e il Referer direttamente al player VLC"
@@ -689,9 +689,9 @@ class WebBrowserDialog(QDialog):
     def _on_title_changed(self, title: str):
         safe_title = (title or "").strip()
         self.setWindowTitle(
-            f"{safe_title} · Browser VistoFlow"
+            f"{safe_title} · Browser ViewerLAB"
             if safe_title
-            else "Browser · VistoFlow"
+            else "Browser · ViewerLAB"
         )
 
     def _start_load_timer(self):

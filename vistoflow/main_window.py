@@ -1,13 +1,16 @@
-"""Finestra unica di VistoFlow: libreria, ricerca IMDb, fonti online, player."""
+"""Finestra unica di ViewerLAB: libreria, ricerca IMDb, fonti online, player."""
 
 from __future__ import annotations
 
+import json
 import logging
 import math
+import os
 import sys
 import time
 from pathlib import Path
 from typing import Callable
+from urllib.parse import quote
 
 from PySide6.QtCore import QObject, QProcess, QRectF, QSize, QThread, QTimer, Qt, QUrl, Signal
 from PySide6.QtGui import (
@@ -28,6 +31,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QHeaderView,
@@ -37,6 +41,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -53,7 +58,7 @@ from .i18n import _
 from .dialogs import DirectLinkDialog, SourceEditorDialog
 from .download_page import DownloadPage
 from .html_site import resolve_site
-from .imdb import ImdbError, Title, shared_client
+from .imdb import ImdbError, Title, from_dict, shared_client, to_dict
 from .models import ProbeResult, Source, StreamCandidate
 from .player import MpvController, MpvError
 from .player_panel import PlayerPanel, _format_time
@@ -61,6 +66,7 @@ from .probe import StreamProbe
 from .resume import END_MARGIN_S, ResumeStore
 from .search import SourceRepository
 from .style import THEME
+from .watchlist import SORT_FIELDS, Watchlist
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +93,14 @@ _GRADIENTS = (
     ("#e07a5f", "#3d2c4e"), ("#3b82f6", "#1e1b4b"), ("#22c55e", "#123524"),
     ("#f59e0b", "#4a2511"), ("#ec4899", "#3b0d2c"), ("#14b8a6", "#0f2e35"),
 )
+
+
+def _int_or(value, default: int = 1) -> int:
+    """Stagione/episodio della libreria («01», "", None) → numero."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _rounded(pixmap: QPixmap, radius: float = 12.0) -> QPixmap:
@@ -146,7 +160,7 @@ def change_language(parent: QWidget, code: str) -> None:
         return
     box = QMessageBox(parent)
     box.setWindowTitle(_("Lingua"))
-    box.setText(_("La nuova lingua verrà applicata al riavvio di VistoFlow."))
+    box.setText(_("La nuova lingua verrà applicata al riavvio di ViewerLAB."))
     restart = box.addButton(_("Riavvia ora"), QMessageBox.ButtonRole.AcceptRole)
     box.addButton(_("Più tardi"), QMessageBox.ButtonRole.RejectRole)
     box.exec()
@@ -211,6 +225,31 @@ class ImdbTask(QThread):
             self.failed.emit(str(error))
             return
         self.completed.emit(result)
+
+
+class WatchlistLookupTask(QThread):
+    """Cerca su IMDb (Cinemeta) voto, durata e locandina dei film della watchlist."""
+
+    found = Signal(str, object)  # chiave, scheda (dict) o None se non trovata
+
+    def __init__(self, items: list[dict], parent=None) -> None:
+        super().__init__(parent)
+        self._items = items
+
+    def run(self) -> None:  # noqa: D401 - QThread
+        client = shared_client()
+        for item in self._items:
+            if self.isInterruptionRequested():
+                return
+            try:
+                title = client.match(item["name"], item.get("year"), "film")
+            except ImdbError:
+                LOGGER.warning("IMDb non raggiungibile: watchlist completata al prossimo avvio")
+                return
+            except Exception:  # pragma: no cover - difesa UI
+                LOGGER.exception("Ricerca IMDb per la watchlist")
+                continue
+            self.found.emit(item["key"], to_dict(title) if title else None)
 
 
 class SearchTask(QThread):
@@ -320,7 +359,7 @@ class MainWindow(QMainWindow):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("VistoFlow")
+        self.setWindowTitle("ViewerLAB")
         self.resize(1360, 880)
 
         self._mpv_path = mpv_path
@@ -347,6 +386,7 @@ class MainWindow(QMainWindow):
         self._resume = ResumeStore(config.data_dir() / "resume.json")
         self._resume_key = ""
         self._resume_title = ""
+        self._resume_url = self._resume_referer = ""
         self._resume_pending: float | None = None
         self._announced: StreamCandidate | None = None
         self._resume_saved_at = 0.0
@@ -383,13 +423,22 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- UI
     # Layout ispirato a Stream Goat: barra laterale a icone, pagine impilate
-    # (Cerca → Dettagli → Player, Fonti, Impostazioni), griglia di locandine.
+    # (Home, Libreria, Fonti → Dettagli → Player, Download…), griglia di locandine.
 
     (PAGE_LIBRARY, PAGE_SEARCH, PAGE_IMDB, PAGE_DETAILS, PAGE_PLAYER, PAGE_SOURCES,
-     PAGE_SETTINGS, PAGE_DOWNLOAD) = range(8)
+     PAGE_PANEL, PAGE_WATCHLIST, PAGE_LIBRARY_HOME) = range(9)
+    # PAGE_LIBRARY è ormai solo il lettore dei file locali; la Libreria è PAGE_LIBRARY_HOME
+    # Le funzioni del pannello di download (una sola vista web, una pagina per tasto):
+    # id dei tasti della barra, distinti dagli indici delle pagine Qt.
+    RAIL_HOME, RAIL_DOWNLOAD, RAIL_WATCHES, RAIL_FILES, RAIL_SETTINGS = range(100, 105)
+    _PANEL_RAIL = {
+        "search": RAIL_HOME, "title": RAIL_HOME, "downloads": RAIL_DOWNLOAD,
+        "requests": RAIL_DOWNLOAD, "my-requests": RAIL_DOWNLOAD, "watches": RAIL_WATCHES,
+        "files": RAIL_FILES, "settings": RAIL_SETTINGS,
+    }
 
     def _build_ui(self) -> None:
-        from .library.window import VistoFlowApp, make_app_icon
+        from .library.window import ViewerLABApp, make_app_icon
 
         central = QWidget()
         central.setObjectName("Root")
@@ -405,11 +454,24 @@ class MainWindow(QMainWindow):
         self._imdb_title: Title | None = None
         self._imdb_task: ImdbTask | None = None
         self._imdb_detail_task: ImdbTask | None = None
+        self._imdb_back = self.PAGE_SEARCH  # dove torna la scheda IMDb
+        self.watchlist = Watchlist(config.data_dir() / "watchlist.json")
+        self._watchlist_task: WatchlistLookupTask | None = None
+        self._watchlist_view: list[dict] = []
+        self._watchlist_found = 0
 
-        # la libreria locale (ex VistoFlow) è un widget della finestra unica
-        self.library = VistoFlowApp()
+        # la libreria locale (ex ViewerLAB) è un widget della finestra unica
+        self.library = ViewerLABApp()
         self.library.setWindowFlags(Qt.WindowType.Widget)
         self.library.fullscreen_changed.connect(self._on_library_fullscreen)
+        self._strip_library()
+        self.library.player.close_requested.connect(lambda: self._go(self.PAGE_LIBRARY_HOME))
+        self._library_view: dict[str, list] = {"film": [], "serie": []}
+        self._library_refresh = QTimer(self)
+        self._library_refresh.setSingleShot(True)
+        self._library_refresh.setInterval(1500)  # le locandine IMDb arrivano a raffica
+        self._library_refresh.timeout.connect(self._refresh_library_home)
+        self.library.imdb_ready.connect(lambda *_a: self._library_refresh.start())
 
         self.rail = self._build_rail()
         self.pages = QStackedWidget()
@@ -419,8 +481,17 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self._build_details_page())
         self.pages.addWidget(self._build_player_page())
         self.pages.addWidget(self._build_sources_page())
-        self.pages.addWidget(self._build_settings_page())
-        self.pages.addWidget(DownloadPage(self._download_server))
+        self.download_page = DownloadPage(self._download_server, {
+            "search": self._build_continue_strip(),
+        })
+        self.download_page.page_changed.connect(self._on_panel_page)
+        self.download_page.film_opened.connect(self._on_watchlist_film_opened)
+        self.download_page.back_requested.connect(lambda: self._go(self.PAGE_WATCHLIST))
+        self.download_page.message.connect(self._on_panel_message)
+        self.download_page.panel_loaded.connect(self._push_panel_settings)
+        self.pages.addWidget(self.download_page)
+        self.pages.addWidget(self._build_watchlist_page())
+        self.pages.addWidget(self._build_library_home())
         # lo stile scuro "Stream Goat" vale per le pagine nuove; la libreria tiene il suo
         self.rail.setStyleSheet(THEME)
         for index in range(1, self.pages.count()):
@@ -433,7 +504,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.pages, 1)
 
         self.statusBar().showMessage(_("Pronto"))
-        self._go(self.PAGE_LIBRARY)
+        self._open_panel("search")  # la Home è la ricerca del pannello
 
         quit_action = QAction(self)
         quit_action.setShortcut(QKeySequence.StandardKey.Quit)
@@ -475,27 +546,58 @@ class MainWindow(QMainWindow):
             if page is not None:
                 button.setCheckable(True)
                 self._rail_group.addButton(button, page)
-                button.clicked.connect(lambda: self._go(page))
-            else:
-                button.clicked.connect(slot)
+            button.clicked.connect(slot or (lambda: self._go(page)))
             return button
 
-        box.addWidget(rail_button("▦", _("Libreria"), self.PAGE_LIBRARY))
-        box.addWidget(rail_button("⌕", _("Cerca"), self.PAGE_SEARCH))
+        def panel_button(icon: str, tip: str, view: str) -> QToolButton:
+            return rail_button(icon, tip, self._PANEL_RAIL[view], lambda: self._open_panel(view))
+
+        box.addWidget(panel_button("🏠", _("Home"), "search"))
+        box.addWidget(rail_button("📁", _("Libreria"), self.PAGE_LIBRARY_HOME))
+        box.addWidget(rail_button("🎬", _("Watchlist"), self.PAGE_WATCHLIST))
         box.addWidget(rail_button("▶", _("Player"), self.PAGE_PLAYER))
-        box.addWidget(rail_button("☰", _("Fonti"), self.PAGE_SOURCES))
-        box.addWidget(rail_button("↓", _("Download"), self.PAGE_DOWNLOAD))
+        box.addWidget(panel_button("↓", _("Download"), "downloads"))
+        box.addWidget(panel_button("🔔", _("Serie seguite"), "watches"))
+        box.addWidget(panel_button("🗂", _("File"), "files"))
         box.addStretch(1)
-        box.addWidget(rail_button("⚙", _("Impostazioni"), self.PAGE_SETTINGS))
+        box.addWidget(panel_button("⚙", _("Impostazioni"), "settings"))
         box.addWidget(rail_button("⛶", _("Schermo intero (F11)"), None, self._fullscreen_current))
         return rail
 
-    def _go(self, page: int) -> None:
+    def _go(self, page: int, rail_page: int | None = None) -> None:
         self.pages.setCurrentIndex(page)
-        rail_page = self.PAGE_SEARCH if page in (self.PAGE_DETAILS, self.PAGE_IMDB) else page
+        if rail_page is None:
+            in_search = (self.PAGE_DETAILS, self.PAGE_IMDB, self.PAGE_SOURCES)
+            rail_page = self.PAGE_SEARCH if page in in_search else page
+            if page == self.PAGE_IMDB:
+                rail_page = self._imdb_back
+            if page == self.PAGE_LIBRARY:  # il lettore dei file locali sta sotto Libreria
+                rail_page = self.PAGE_LIBRARY_HOME
+        if page == self.PAGE_LIBRARY_HOME:
+            self._refresh_library_home(rescan=True)  # nuovi download compaiono subito
         button = self._rail_group.button(rail_page)
         if button is not None:
             button.setChecked(True)
+
+    def _open_panel(self, view: str) -> None:
+        """Una funzione del pannello di download: «search» (Home), «downloads», «settings»…"""
+        self.download_page.show_view(view)
+        self._go(self.PAGE_PANEL, self._PANEL_RAIL.get(view.split("?")[0], self.RAIL_HOME))
+        if view.startswith("search"):
+            self._refresh_continue()
+
+    def _on_panel_page(self, page: str) -> None:
+        """Navigando dentro il pannello, la barra segue la pagina aperta."""
+        # un film aperto dalla watchlist (o la sua ricerca, se incerto) resta sotto Watchlist
+        from_watchlist = page in ("title", "search") and self._rail_group.checkedId() == self.PAGE_WATCHLIST
+        if self.pages.currentIndex() == self.PAGE_PANEL and page in self._PANEL_RAIL and not from_watchlist:
+            self._rail_group.button(self._PANEL_RAIL[page]).setChecked(True)
+        if page == "search":
+            self._refresh_continue()
+
+    def _search_in_downloads(self) -> None:
+        query = self.search_edit.text().strip()
+        self._open_panel(f"search?q={quote(query)}" if query else "search")
 
     @staticmethod
     def _page(title: str) -> tuple[QWidget, QVBoxLayout]:
@@ -510,7 +612,7 @@ class MainWindow(QMainWindow):
         return page, box
 
     def _build_search_page(self) -> QWidget:
-        page, box = self._page(_("Cerca"))
+        page, box = self._page(_("Cerca nelle fonti"))
         self.search_edit = QLineEdit()
         self.search_edit.setObjectName("SearchField")
         self.search_edit.setPlaceholderText(_("Cerca film e serie su IMDb e nelle tue fonti"))
@@ -520,9 +622,18 @@ class MainWindow(QMainWindow):
         self.search_button = QPushButton(_("Cerca"))
         self.search_button.setObjectName("PrimaryButton")
         self.search_button.clicked.connect(self._start_search)
+        download_search = QPushButton("↓  " + _("Cerca da scaricare"))
+        download_search.setObjectName("GhostButton")
+        download_search.setToolTip(_("Cerca lo stesso titolo nel pannello Download"))
+        download_search.clicked.connect(self._search_in_downloads)
         row = QHBoxLayout()
         row.addWidget(self.search_edit, 1)
         row.addWidget(self.search_button)
+        row.addWidget(download_search)
+        manage = QPushButton("☰  " + _("Gestisci fonti"))
+        manage.setObjectName("GhostButton")
+        manage.clicked.connect(lambda: self._go(self.PAGE_SOURCES))
+        row.addWidget(manage)
         row.addStretch(0)
         box.addLayout(row)
 
@@ -530,6 +641,7 @@ class MainWindow(QMainWindow):
         sections = QVBoxLayout(content)
         sections.setContentsMargins(0, 0, 0, 0)
         sections.setSpacing(10)
+
 
         self.imdb_header = QLabel(_("IMDb"))
         self.imdb_header.setObjectName("SectionTitle")
@@ -575,7 +687,7 @@ class MainWindow(QMainWindow):
         back.setObjectName("RoundButton")
         back.setText("←")
         back.setToolTip(_("Indietro"))
-        back.clicked.connect(lambda: self._go(self.PAGE_SEARCH))
+        back.clicked.connect(lambda: self._go(self._imdb_back))
         badge = QLabel("IMDb")
         badge.setObjectName("ImdbBadge")
         top = QHBoxLayout()
@@ -607,6 +719,15 @@ class MainWindow(QMainWindow):
         sources_button = QPushButton("⌕  " + _("Cerca nelle tue fonti"))
         sources_button.setObjectName("GhostButton")
         sources_button.clicked.connect(self._search_imdb_in_sources)
+        download_button = QPushButton("↓  " + _("Scarica / guarda"))
+        download_button.setObjectName("GhostButton")
+        download_button.setToolTip(_("Cerca il titolo nel motore di download e streaming"))
+        download_button.clicked.connect(
+            lambda: self._imdb_title and self._open_panel(f"search?q={quote(self._imdb_title.name)}")
+        )
+        self.watchlist_button = QPushButton()
+        self.watchlist_button.setObjectName("GhostButton")
+        self.watchlist_button.clicked.connect(self._add_imdb_to_watchlist)
         open_button = QPushButton("↗  " + _("Apri su IMDb"))
         open_button.setObjectName("GhostButton")
         open_button.clicked.connect(
@@ -616,6 +737,8 @@ class MainWindow(QMainWindow):
         actions.setSpacing(10)
         actions.addWidget(self.imdb_play_button)
         actions.addWidget(sources_button)
+        actions.addWidget(download_button)
+        actions.addWidget(self.watchlist_button)
         actions.addWidget(open_button)
         actions.addStretch(1)
 
@@ -757,24 +880,414 @@ class MainWindow(QMainWindow):
         box.addWidget(self.sources_table, 1)
         return page
 
-    def _build_settings_page(self) -> QWidget:
-        page, box = self._page(_("Impostazioni"))
-        card = QFrame()
-        card.setObjectName("Card")
-        form = QHBoxLayout(card)
-        form.setContentsMargins(20, 16, 20, 16)
-        label = QLabel(_("Lingua dell'interfaccia"))
-        combo = QComboBox()
-        for code, name in i18n.LANGUAGES.items():
-            combo.addItem(name, code)
-        combo.setCurrentIndex(combo.findData(i18n.language()))
-        combo.currentIndexChanged.connect(lambda: change_language(self, combo.currentData()))
-        form.addWidget(label)
-        form.addStretch(1)
-        form.addWidget(combo)
-        box.addWidget(card)
-        box.addStretch(1)
+    def _build_continue_strip(self) -> QWidget:
+        """Sopra la Home: l'ultimo contenuto lasciato a metà."""
+        # «Continua a guardare»: l'ultimo contenuto lasciato a metà
+        self.continue_card = QFrame()
+        self.continue_card.setObjectName("Card")
+        card = QHBoxLayout(self.continue_card)
+        card.setContentsMargins(20, 14, 20, 14)
+        text = QVBoxLayout()
+        heading = QLabel(_("Continua a guardare"))
+        heading.setObjectName("SectionTitle")
+        self.continue_title = QLabel()
+        self.continue_title.setWordWrap(True)
+        self.continue_info = QLabel()
+        self.continue_info.setObjectName("Muted")
+        text.addWidget(heading)
+        text.addWidget(self.continue_title)
+        text.addWidget(self.continue_info)
+        resume = QPushButton("▶  " + _("Riprendi"))
+        resume.setObjectName("WhiteButton")
+        resume.clicked.connect(self._resume_last)
+        card.addLayout(text, 1)
+        card.addWidget(resume, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.continue_card.setStyleSheet("QLabel { background: transparent; }")
+        self.continue_card.hide()
+        self._continue_target: tuple | None = None
+        wrapper = QWidget()
+        outer = QVBoxLayout(wrapper)
+        outer.setContentsMargins(16, 10, 16, 0)
+        outer.addWidget(self.continue_card)
+        return wrapper
+
+    def _push_panel_settings(self) -> None:
+        """Le tab Generali, Watchlist e la cartella in Download, nelle impostazioni del pannello."""
+        count = len(self.watchlist.items)
+        state = {
+            "libraryRoot": config.read_setting("library_root") or "",
+            "languages": i18n.LANGUAGES,
+            "language": i18n.language(),
+            "watchlistInfo": _("{count} film nella watchlist").format(count=count) if count else "",
+        }
+        self.download_page.run_js(f"viewerlabSettings({json.dumps(state)})")
+
+    def _on_panel_message(self, text: str) -> None:
+        if text == "choose-root":
+            self._choose_library_root()
+        elif text == "import-watchlist":
+            self._import_watchlist()
+        elif text.startswith("language:"):
+            change_language(self, text.split(":", 1)[1])
+
+    def _choose_library_root(self) -> None:
+        current = config.read_setting("library_root") or str(Path.home() / "Videos")
+        root = QFileDialog.getExistingDirectory(self, _("Cartella dei contenuti"), current)
+        if not root:
+            return
+        try:
+            config.set_library_root(root)
+        except OSError as error:
+            QMessageBox.warning(self, _("Impostazioni"), str(error))
+            return
+        self._push_panel_settings()
+        if self.library.manager.add_library_path(root):
+            self.library.reload()
+        self.statusBar().showMessage(
+            _("I download andranno in {path}").format(path=root), 6000
+        )
+
+    # ---------------------------------------------------------------- watchlist
+
+    def _build_watchlist_page(self) -> QWidget:
+        page, box = self._page(_("Watchlist"))
+        row = QHBoxLayout()
+        self.watchlist_summary = QLabel()
+        self.watchlist_summary.setObjectName("Muted")
+        self.watchlist_summary.setWordWrap(True)
+        self.watchlist_sort = QComboBox()
+        labels = {"added": _("Data di aggiunta"), "runtime": _("Durata"),
+                  "year": _("Anno di uscita"), "rating": _("Voto IMDb")}
+        for field in SORT_FIELDS:
+            self.watchlist_sort.addItem(labels[field], field)
+        self.watchlist_order = QPushButton()
+        self.watchlist_order.setCheckable(True)
+        self.watchlist_order.setChecked(True)  # decrescente
+        self.watchlist_sort.currentIndexChanged.connect(self._refresh_watchlist)
+        self.watchlist_order.toggled.connect(self._refresh_watchlist)
+        row.addWidget(self.watchlist_summary, 1)
+        row.addWidget(QLabel(_("Ordina per")))
+        row.addWidget(self.watchlist_sort)
+        row.addWidget(self.watchlist_order)
+        box.addLayout(row)
+
+        self.watchlist_grid = PosterGrid()
+        self.watchlist_grid.itemClicked.connect(self._open_watchlist_item)
+        self.watchlist_grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.watchlist_grid.customContextMenuRequested.connect(self._watchlist_menu)
+        holder = QWidget()
+        inner = QVBoxLayout(holder)
+        inner.setContentsMargins(0, 0, 0, 0)
+        inner.addWidget(self.watchlist_grid)
+        inner.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(holder)
+        box.addWidget(scroll, 1)
+        self._refresh_watchlist()
+        self._lookup_watchlist()
         return page
+
+    # ------------------------------------------------------------- libreria
+
+    def _build_library_home(self) -> QWidget:
+        """Libreria: i contenuti scaricati, film sopra e serie sotto."""
+        page, box = self._page(_("Libreria"))
+        self.library_summary = QLabel()
+        self.library_summary.setObjectName("Muted")
+        self.library_summary.setWordWrap(True)
+        box.addWidget(self.library_summary)
+        holder = QWidget()
+        inner = QVBoxLayout(holder)
+        inner.setContentsMargins(0, 0, 0, 0)
+        self.library_grids: dict[str, PosterGrid] = {}
+        self.library_headers: dict[str, QLabel] = {}
+        for kind, label in (("film", _("Film")), ("serie", _("Serie TV"))):
+            header = QLabel(label)
+            header.setObjectName("SectionTitle")
+            grid = PosterGrid()
+            grid.itemClicked.connect(lambda entry, k=kind: self._open_library_item(k, entry))
+            grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            grid.customContextMenuRequested.connect(lambda pos, k=kind: self._library_menu(k, pos))
+            inner.addWidget(header)
+            inner.addWidget(grid)
+            self.library_headers[kind] = header
+            self.library_grids[kind] = grid
+        inner.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(holder)
+        box.addWidget(scroll, 1)
+        self._refresh_library_home()
+        return page
+
+    def _download_dirs(self) -> dict[str, str]:
+        """Cartelle dei download del pannello → «film» / «serie» ("" = da capire dal nome)."""
+        from vistoflow_dl.config import VIDEOS_DIR, read_data
+
+        kinds = {"film": "film", "movie": "film", "tv": "serie", "anime": "serie"}
+        dirs = {os.path.normcase(os.path.normpath(lib["path"])): kinds.get(lib.get("type"), "")
+                for lib in read_data().get("libraries", []) if lib.get("path")}
+        return dirs or {os.path.normcase(os.path.normpath(str(VIDEOS_DIR))): ""}
+
+    def _downloaded_records(self) -> list[dict]:
+        dirs = self._download_dirs()
+        found = []
+        for record in self.library.records:
+            path = os.path.normcase(os.path.normpath(record["path"]))
+            for folder, kind in dirs.items():
+                if path.startswith(folder + os.sep):
+                    found.append(dict(record, kind=kind or record["kind"]) if kind else record)
+                    break
+        return found
+
+    def _refresh_library_home(self, rescan: bool = False) -> None:
+        if rescan:
+            added = [self.library.manager.add_library_path(p) for p in self._download_dirs()
+                     if os.path.isdir(p)]
+            self.library.reload()
+            if any(added):
+                LOGGER.info("Cartelle dei download aggiunte alla libreria")
+        groups: dict[str, dict[str, list[dict]]] = {"film": {}, "serie": {}}
+        for record in self._downloaded_records():
+            groups[record["kind"] if record["kind"] in groups else "film"].setdefault(
+                record["series"], []).append(record)
+        for kind, grid in self.library_grids.items():
+            names = sorted(groups[kind], key=str.casefold)
+            self._library_view[kind] = [groups[kind][name] for name in names]
+            grid.clear()
+            for name in names:
+                records = groups[kind][name]
+                cover = self.library._cover_pixmap(records[0].get("cover"), _POSTER_W, _POSTER_H)
+                pixmap = _rounded(cover) if not cover.isNull() else _placeholder_poster(name, _POSTER_W, _POSTER_H)
+                if kind == "serie":
+                    seen = sum(r["status"] == "visto" for r in records)
+                    count = _("1 episodio") if len(records) == 1 else _("{n} episodi").format(n=len(records))
+                    caption = count + (f"  ·  ✓ {seen}" if seen else "")
+                else:
+                    caption = {"visto": "✓ " + _("Visto"), "iniziato": f"{round(records[0]['progress'] * 100)}%"}.get(
+                        records[0]["status"], "")
+                entry = QListWidgetItem(name + ("\n" + caption if caption else ""))
+                entry.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+                entry.setToolTip(name)
+                entry.setIcon(_icon(pixmap))
+                grid.addItem(entry)
+            grid.fit()
+            self.library_headers[kind].setVisible(bool(names))
+        films, series = len(self._library_view["film"]), len(self._library_view["serie"])
+        self.library_summary.setText(
+            _("{films} film · {series} serie scaricati").format(films=films, series=series)
+            if films or series else
+            _("Nessun contenuto scaricato. Scarica un film o una serie dalla Home: comparirà qui.")
+        )
+
+    @staticmethod
+    def _next_episode(records: list[dict]) -> dict:
+        """L'episodio iniziato, altrimenti il primo non visto, altrimenti il primo."""
+        ordered = sorted(records, key=lambda r: (_int_or(r["season"]), _int_or(r["episode"])))
+        return (next((r for r in ordered if r["status"] == "iniziato"), None)
+                or next((r for r in ordered if r["status"] != "visto"), ordered[0]))
+
+    def _play_library_record(self, record: dict) -> None:
+        self._go(self.PAGE_LIBRARY)
+        self.library._play_record(record)
+
+    def _open_library_item(self, kind: str, entry: QListWidgetItem) -> None:
+        records = self._library_view[kind][self.library_grids[kind].row(entry)]
+        self._play_library_record(self._next_episode(records) if kind == "serie" else records[0])
+
+    def _library_menu(self, kind: str, pos) -> None:
+        grid = self.library_grids[kind]
+        entry = grid.itemAt(pos)
+        if entry is None:
+            return
+        records = self._library_view[kind][grid.row(entry)]
+        menu = QMenu(self)
+        if kind == "serie":
+            seasons: dict[int, QMenu] = {}
+            for record in sorted(records, key=lambda r: (_int_or(r["season"]), _int_or(r["episode"]))):
+                season = _int_or(record["season"])
+                if season not in seasons:
+                    seasons[season] = menu.addMenu(_("Stagione {n}").format(n=season))
+                mark = "✓  " if record["status"] == "visto" else ""
+                seasons[season].addAction(
+                    f"{mark}E{_int_or(record['episode']):02d}  {record['title']}",
+                    lambda r=record: self._play_library_record(r))
+        else:
+            menu.addAction("▶  " + _("Guarda"), lambda: self._play_library_record(records[0]))
+        folder = os.path.dirname(records[0]["path"])
+        menu.addAction("🗂  " + _("Apri cartella"), lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(folder)))
+        menu.exec(grid.mapToGlobal(pos))
+
+    @staticmethod
+    def _watchlist_title(item: dict) -> Title:
+        imdb = from_dict(item.get("imdb") or {})
+        return imdb or Title(imdb_id="", kind="movie", name=item["name"], year=item.get("year", ""))
+
+    def _refresh_watchlist(self) -> None:
+        descending = self.watchlist_order.isChecked()
+        self.watchlist_order.setText(("↓  " + _("Decrescente")) if descending else ("↑  " + _("Crescente")))
+        self._watchlist_view = self.watchlist.sorted(self.watchlist_sort.currentData(), descending)
+        self.watchlist_grid.clear()
+        for item in self._watchlist_view:
+            title = self._watchlist_title(item)
+            details = [item.get("year", ""), f"★ {title.rating}" if title.rating else "", title.runtime]
+            entry = QListWidgetItem(title.name + "\n" + "  ·  ".join(d for d in details if d))
+            entry.setTextAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+            entry.setToolTip(item["name"] + (f" ({item['year']})" if item.get("year") else ""))
+            entry.setIcon(_icon(self._poster_for(title, _POSTER_W, _POSTER_H)))
+            self.watchlist_grid.addItem(entry)
+            if title.poster and title.poster not in self._posters:
+                self._fetch_poster(title.poster)
+        self.watchlist_grid.fit()
+        count = len(self._watchlist_view)
+        text = _("{count} film").format(count=count) if count else _(
+            "Watchlist vuota: importala da Impostazioni → Watchlist import, "
+            "o aggiungi un film dalla sua scheda IMDb."
+        )
+        pending = len(self.watchlist.missing_imdb())
+        if pending:
+            text += "  ·  " + _("dati IMDb in arrivo per {n} film…").format(n=pending)
+        self.watchlist_summary.setText(text)
+
+    def _lookup_watchlist(self) -> None:
+        missing = self.watchlist.missing_imdb()
+        if not missing or (self._watchlist_task is not None and self._watchlist_task.isRunning()):
+            return
+        self._watchlist_task = WatchlistLookupTask(missing, self)
+        self._watchlist_task.found.connect(self._on_watchlist_found)
+        self._watchlist_task.finished.connect(self._on_watchlist_lookup_done)
+        self._watchlist_task.start()
+
+    def _on_watchlist_found(self, key: str, imdb) -> None:
+        self.watchlist.set_imdb(key, imdb)
+        self._watchlist_found += 1
+        if self._watchlist_found % 10 == 0:  # aggiorna a blocchi, non a ogni film
+            self.watchlist.save()
+            self._refresh_watchlist()
+
+    def _on_watchlist_lookup_done(self) -> None:
+        self.watchlist.save()
+        self._refresh_watchlist()
+        task, self._watchlist_task = self._watchlist_task, None
+        if task is not None:
+            task.deleteLater()
+            if not task.isInterruptionRequested():
+                self._lookup_watchlist()  # film importati mentre la ricerca era in corso
+
+    def _import_watchlist(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(
+            self, _("Importa watchlist di Letterboxd"), str(Path.home()), "CSV (*.csv)"
+        )
+        if not path:
+            return
+        try:
+            added, known = self.watchlist.import_letterboxd(path)
+        except (OSError, ValueError, UnicodeDecodeError) as error:
+            QMessageBox.warning(self, _("Watchlist import"), str(error))
+            return
+        QMessageBox.information(
+            self, _("Watchlist import"),
+            _("Aggiunti {added} film nuovi ({known} erano già nella watchlist).")
+            .format(added=added, known=known),
+        )
+        self._refresh_watchlist()
+        self._lookup_watchlist()
+        self._push_panel_settings()
+
+    def _open_watchlist_item(self, _entry=None) -> None:
+        row = self.watchlist_grid.currentRow()
+        if not 0 <= row < len(self._watchlist_view):
+            return
+        item = self._watchlist_view[row]
+        tmdb_id = (item.get("imdb") or {}).get("tmdb_id") or 0
+        # si resta sulla watchlist finché la pagina del film non è pronta
+        self._watchlist_opening = self.watchlist_summary.text()
+        self.watchlist_summary.setText(_("Apertura di «{name}»…").format(name=item["name"]))
+        self.download_page.open_film(item["name"], item.get("year", ""), tmdb_id)
+
+    def _on_watchlist_film_opened(self) -> None:
+        if not getattr(self, "_watchlist_opening", ""):
+            return
+        self.watchlist_summary.setText(self._watchlist_opening)
+        self._watchlist_opening = ""
+        if self.pages.currentIndex() == self.PAGE_WATCHLIST:  # non se nel frattempo sei andato altrove
+            self._go(self.PAGE_PANEL, self.PAGE_WATCHLIST)
+
+    def _open_watchlist_imdb(self, item: dict) -> None:
+        title = self._watchlist_title(item)
+        self._imdb_back = self.PAGE_WATCHLIST
+        self._fill_imdb(title)
+        self._go(self.PAGE_IMDB)
+        if title.imdb_id:  # cast, trama e regia complete
+            self._imdb_detail_task = ImdbTask(title=title, parent=self)
+            self._imdb_detail_task.completed.connect(self._fill_imdb)
+            self._imdb_detail_task.failed.connect(lambda message: self.imdb_status.setText(message))
+            self._imdb_detail_task.start()
+
+    def _watchlist_menu(self, pos) -> None:
+        entry = self.watchlist_grid.itemAt(pos)
+        if entry is None:
+            return
+        item = self._watchlist_view[self.watchlist_grid.row(entry)]
+        menu = QMenu(self)
+        menu.addAction("ⓘ  " + _("Scheda IMDb"), lambda: self._open_watchlist_imdb(item))
+        menu.addAction("✕  " + _("Rimuovi dalla watchlist"),
+                       lambda: (self.watchlist.remove(item["key"]), self._refresh_watchlist()))
+        menu.exec(self.watchlist_grid.mapToGlobal(pos))
+
+    def _add_imdb_to_watchlist(self) -> None:
+        title = self._imdb_title
+        if title is None:
+            return
+        if self.watchlist.add(title.name, title.year[:4], imdb=to_dict(title) if title.imdb_id else None):
+            self.watchlist.save()
+            self._refresh_watchlist()
+        self._fill_imdb(title)
+
+    # ------------------------------------------------------- continua a guardare
+
+    def _refresh_continue(self) -> None:
+        """Mostra nella Home l'ultimo contenuto lasciato a metà (libreria o streaming)."""
+        local = self.library.manager.last_watched()
+        stream = self._resume.latest()
+        stream_at = stream[1].get("updated", 0) if stream else 0
+        if local and local[0] >= stream_at:
+            record = self.library.manager.describe(local[1])
+            position, duration = record["position"] / 1000, record["duration"] / 1000
+            self._continue_target = ("local", record)
+            title = record["title"]
+            if record["kind"] == "serie":
+                title = f"{record['series']} · S{record['season']}E{record['episode']} — {title}"
+        elif stream:
+            key, entry = stream
+            position, duration = entry.get("position", 0), entry.get("duration", 0)
+            self._continue_target = ("stream", key, entry)
+            title = entry.get("title") or _("Streaming")
+        else:
+            self._continue_target = None
+            self.continue_card.hide()
+            return
+        self.continue_title.setText(title)
+        info = _format_time(position * 1000)
+        if duration > 0:
+            info += f" / {_format_time(duration * 1000)}  ·  {round(100 * position / duration)}%"
+        self.continue_info.setText(info)
+        self.continue_card.show()
+
+    def _resume_last(self) -> None:
+        target = self._continue_target
+        if target is None:
+            return
+        if target[0] == "local":
+            self._go(self.PAGE_LIBRARY)
+            self.library._play_record(target[1])
+        else:
+            _kind, key, entry = target
+            # shortcut: l'URL salvato può essere scaduto (token HLS); allora va riaperto dalla fonte
+            self._play_download_stream(entry["url"], entry.get("referer", ""), entry.get("title", ""), key)
 
     # ------------------------------------------------------- griglia/dettagli
 
@@ -837,7 +1350,7 @@ class MainWindow(QMainWindow):
     def _fetch_poster(self, url: str) -> None:
         self._posters[url] = QPixmap()  # segnaposto: evita richieste doppie
         request = QNetworkRequest(QUrl(url))
-        request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Mozilla/5.0 VistoFlow")
+        request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Mozilla/5.0 ViewerLAB")
         reply = self._network.get(request)
         reply.finished.connect(lambda: self._on_poster_reply(url, reply))
 
@@ -853,6 +1366,11 @@ class MainWindow(QMainWindow):
             item = self.results.item(row)
             if candidate.poster == url and item is not None:
                 item.setIcon(_icon(self._poster_for(candidate, _POSTER_W, _POSTER_H)))
+        for row, entry in enumerate(self._watchlist_view):
+            title = self._watchlist_title(entry)
+            item = self.watchlist_grid.item(row)
+            if title.poster == url and item is not None:
+                item.setIcon(_icon(self._poster_for(title, _POSTER_W, _POSTER_H)))
         for row, title in enumerate(self._imdb_results):
             item = self.imdb_grid.item(row)
             if title.poster == url and item is not None:
@@ -916,6 +1434,7 @@ class MainWindow(QMainWindow):
         row = self.imdb_grid.currentRow()
         if not 0 <= row < len(self._imdb_results):
             return
+        self._imdb_back = self.PAGE_SEARCH
         self._fill_imdb(self._imdb_results[row])
         self._go(self.PAGE_IMDB)
         self._imdb_detail_task = ImdbTask(title=self._imdb_results[row], parent=self)
@@ -949,6 +1468,9 @@ class MainWindow(QMainWindow):
             people.append(f"<b>{_('Cast')}</b>: " + ", ".join(title.cast[:8]))
         self.imdb_people.setText("<br>".join(people))
         self.imdb_plot.setText(title.description)
+        listed = self.watchlist.contains(title.name, title.year[:4])
+        self.watchlist_button.setText("✓  " + _("In watchlist") if listed else "＋  " + _("Watchlist"))
+        self.watchlist_button.setEnabled(not listed)
         in_library = self.library.imdb_title_in_library(title)
         self.imdb_play_button.setEnabled(in_library)
         self.imdb_status.setText(
@@ -979,6 +1501,15 @@ class MainWindow(QMainWindow):
     def _on_library_fullscreen(self, full: bool) -> None:
         self.rail.setVisible(not full)
         self.statusBar().setVisible(not full)
+        if not full:  # uscendo, la libreria rimostra barra e albero: via di nuovo
+            QTimer.singleShot(0, self._strip_library)
+
+    def _strip_library(self) -> None:
+        """Della vecchia libreria resta solo il lettore; la navigazione è nella pagina Libreria."""
+        for part in (self.library.topbar, self.library.sidebar,
+                     self.library.browser_panel, self.library.player_bar):
+            part.setVisible(False)
+            part.setMaximumSize(0, 0)  # close_player() rimostra player_bar: resta invisibile
 
     # ------------------------------------------------------------- fonti
 
@@ -1397,6 +1928,7 @@ class MainWindow(QMainWindow):
         self._resume.save()  # il contenuto precedente, prima di cambiare
         self._resume_key = candidate.resume_key or candidate.page_url or candidate.url
         self._resume_title = candidate.title
+        self._resume_url, self._resume_referer = candidate.url, candidate.referer
         self._resume_pending = self._resume.get(self._resume_key)
         self.player_panel.set_active(True)
         self.player_panel.set_title(candidate.title)
@@ -1562,13 +2094,20 @@ class MainWindow(QMainWindow):
         position = state.get("position_ms", 0.0) / 1000.0
         if position <= 0:
             return
-        self._resume.update(self._resume_key, position, duration, self._resume_title)
+        self._resume.update(
+            self._resume_key, position, duration, self._resume_title,
+            self._resume_url, self._resume_referer,
+        )
         if time.monotonic() - self._resume_saved_at > 5.0:
             self._resume.save()
             self._resume_saved_at = time.monotonic()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - API Qt
         self._resume.save()
+        if self._watchlist_task is not None:
+            self._watchlist_task.requestInterruption()
+            self._watchlist_task.wait(15000)
+        self.watchlist.save()
         for task in (self._search_task, self._probe_task, self._start_task,
                      self._imdb_task, self._imdb_detail_task):
             if task is not None and task.isRunning():

@@ -12,8 +12,8 @@ from pathlib import Path
 
 from .models import Source
 
-APP_NAME = "VistoFlow"
-_OLD_APP_NAME = "ViewerLAB"  # cartella dati delle versioni precedenti
+APP_NAME = "ViewerLAB"
+_OLD_APP_NAME = "VistoFlow"  # cartella dati delle versioni precedenti
 CONFIG_FILENAME = "sources.json"
 
 _DEMO_SOURCE_ID = "demo-public"
@@ -35,12 +35,12 @@ def data_dir() -> Path:
         base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
         path = Path(base) / APP_NAME if base else Path.home() / ".vistoflow"
         old = Path(base) / _OLD_APP_NAME if base else None
-        if old is not None and old.is_dir() and not path.exists():
-            # primo avvio dopo il cambio nome: porta fonti e impostazioni
-            path.mkdir(parents=True, exist_ok=True)
-            for name in (CONFIG_FILENAME, "settings.json"):
-                if (old / name).is_file():
-                    shutil.copy2(old / name, path / name)
+        if old is not None and (old / "download").is_dir() and not (path / "download").exists():
+            # primo avvio dopo il cambio nome: copia tutto (fonti, download, posizioni)
+            try:
+                shutil.copytree(old, path, dirs_exist_ok=True)
+            except OSError:
+                logging.getLogger(__name__).exception("Migrazione dei dati da %s non riuscita", old)
     else:
         path = Path.home() / ".local" / "share" / "vistoflow"
     path.mkdir(parents=True, exist_ok=True)
@@ -53,6 +53,45 @@ def bundled_path(relative: str) -> Path:
 
 def config_path() -> Path:
     return data_dir() / CONFIG_FILENAME
+
+
+def read_setting(key: str, default=None):
+    """Valore da ``settings.json`` (lo stesso file della lingua)."""
+    try:
+        data = json.loads((data_dir() / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+    return data.get(key, default) if isinstance(data, dict) else default
+
+
+def write_setting(key: str, value) -> None:
+    path = data_dir() / "settings.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    data[key] = value
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+LIBRARY_SUBFOLDERS = {"film": "Film", "tv": "Serie TV", "anime": "Serie TV"}
+
+
+def set_library_root(root: str) -> None:
+    """Cartella di riferimento: crea «Film» e «Serie TV» e ci manda i download."""
+    root_path = Path(root)
+    for name in set(LIBRARY_SUBFOLDERS.values()):
+        (root_path / name).mkdir(parents=True, exist_ok=True)
+    from vistoflow_dl import config as dl_config  # dopo PanelServer: percorsi già impostati
+
+    dl_config.update_data({
+        "libraries": [
+            {"type": kind, "path": str(root_path / name)} for kind, name in LIBRARY_SUBFOLDERS.items()
+        ]
+    })
+    write_setting("library_root", str(root_path))
 
 
 def default_sources() -> list[Source]:

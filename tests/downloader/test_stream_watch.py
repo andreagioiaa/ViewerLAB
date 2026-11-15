@@ -1,4 +1,4 @@
-"""«Guarda»: il pannello risolve il flusso e lo consegna al player di VistoFlow."""
+"""«Guarda»: il pannello risolve il flusso e lo consegna al player di ViewerLAB."""
 
 import pytest
 

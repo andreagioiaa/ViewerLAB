@@ -1,4 +1,4 @@
-"""Task asincroni condivisi dalla GUI VistoFlow.
+"""Task asincroni condivisi dalla GUI ViewerLAB.
 
 Le coroutine e i download vengono eseguiti in thread demone; i risultati
 tornano al thread Qt tramite segnali. Il modulo non conosce la UI, così può

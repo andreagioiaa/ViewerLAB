@@ -1,4 +1,4 @@
-"""Motore online integrato in VistoFlow Pro.
+"""Motore online integrato in ViewerLAB Pro.
 
 Il pacchetto contiene la pipeline già usata dal Media Center (canali,
 resolver, TMDB) ma è pensato per essere importato direttamente dall'app

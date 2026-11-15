@@ -18,7 +18,7 @@ from vistoflow_dl.core.headers import get_headers
 logger = logging.getLogger(__name__)
 
 # (url, referer, title, key) → None; key identifica il contenuto, per riprendere
-# da dove eri. Registrato da VistoFlow (vistoflow/main_window.py); None quando il
+# da dove eri. Registrato da ViewerLAB (vistoflow/main_window.py); None quando il
 # pannello gira senza un player a cui consegnare il flusso.
 _player: Callable[[str, str, str, str], None] | None = None
 

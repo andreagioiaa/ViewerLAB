@@ -203,7 +203,7 @@ class MpvController:
             "--osc=no",
             "--hr-seek=yes",
             "--volume=100",
-            "--title=VistoFlow",
+            "--title=ViewerLAB",
             "--input-default-bindings=no",
             "--input-vo-keyboard=no",
             "--hwdec=auto-safe",

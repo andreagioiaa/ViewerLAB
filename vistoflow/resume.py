@@ -33,7 +33,10 @@ class ResumeStore:
         position = float(entry.get("position") or 0.0)
         return position if position >= MIN_RESUME_S else None
 
-    def update(self, key: str, position: float, duration: float, title: str = "") -> None:
+    def update(
+        self, key: str, position: float, duration: float, title: str = "",
+        url: str = "", referer: str = "",
+    ) -> None:
         if not key or duration <= 0:
             return
         if position >= duration - END_MARGIN_S:
@@ -43,9 +46,16 @@ class ResumeStore:
             "position": round(position, 1),
             "duration": round(duration, 1),
             "title": title,
+            "url": url,
+            "referer": referer,
             "updated": time.time(),
         }
         self._dirty = True
+
+    def latest(self) -> tuple[str, dict] | None:
+        """L'ultimo contenuto lasciato a metà che si può riaprire (ha un URL)."""
+        playable = [(k, v) for k, v in self._items.items() if v.get("url")]
+        return max(playable, key=lambda kv: kv[1].get("updated", 0), default=None)
 
     def save(self) -> None:
         if not self._dirty:

@@ -1,4 +1,4 @@
-"""Finestre di dialogo di VistoFlow Pro."""
+"""Finestre di dialogo di ViewerLAB Pro."""
 
 import os
 import tempfile

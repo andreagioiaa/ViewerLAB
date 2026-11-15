@@ -20,15 +20,15 @@ EN: dict[str, str] = {
     "Ripreso da {time}": "Resumed from {time}",
     "Apri nel browser": "Open in browser",
     "Avvio del pannello di download…": "Starting the download panel…",
-    "Il pannello di download non si è avviato: {error}. Dettagli in vistoflow.log.":
-        "The download panel did not start: {error}. Details in vistoflow.log.",
+    "Il pannello di download non si è avviato: {error}. Dettagli in viewerlab.log.":
+        "The download panel did not start: {error}. Details in viewerlab.log.",
     "errore sconosciuto": "unknown error",
     "Impostazioni": "Settings",
     "Lingua": "Language",
     "Lingua dell'interfaccia": "Interface language",
     "Riavvia ora": "Restart now",
     "Più tardi": "Later",
-    "La nuova lingua verrà applicata al riavvio di VistoFlow.": "The new language will be applied when VistoFlow restarts.",
+    "La nuova lingua verrà applicata al riavvio di ViewerLAB.": "The new language will be applied when ViewerLAB restarts.",
     "Libreria": "Library",
     "Indietro": "Back",
     "Tutte": "All",
@@ -62,7 +62,7 @@ EN: dict[str, str] = {
     "Tipo": "Type",
     "Fonte": "Source",
     "Stato": "Status",
-    "VistoFlow — Media Center": "VistoFlow — Media Center",
+    "ViewerLAB — Media Center": "ViewerLAB — Media Center",
     "Cerca un titolo nei cataloghi configurati (vuoto = mostra tutto)":
         "Search a title in the configured catalogs (empty = show all)",
     "Cerca": "Search",
@@ -179,8 +179,8 @@ EN: dict[str, str] = {
     "L'API deve restituire JSON con una lista 'items'. Usa {query} nell'URL per passare il testo cercato.":
         "The API must return JSON with an 'items' list. Use {query} in the URL to pass the search text.",
     "Opzionale: https://www.esempio.it/cerca?q={query}": "Optional: https://www.example.com/search?q={query}",
-    "Inserisci la home del sito: VistoFlow cerca i contenuti e ricava il flusso dalla pagina del titolo. Se il sito non espone un modulo di ricerca, indica l'URL di ricerca con {query}. I selettori CSS sono opzionali. Nessun JavaScript viene eseguito e nessun DRM viene aggirato.":
-        "Enter the site's home page: VistoFlow searches its content and extracts the stream from the title page. If the site has no search form, set the search URL with {query}. CSS selectors are optional. No JavaScript is executed and no DRM is bypassed.",
+    "Inserisci la home del sito: ViewerLAB cerca i contenuti e ricava il flusso dalla pagina del titolo. Se il sito non espone un modulo di ricerca, indica l'URL di ricerca con {query}. I selettori CSS sono opzionali. Nessun JavaScript viene eseguito e nessun DRM viene aggirato.":
+        "Enter the site's home page: ViewerLAB searches its content and extracts the stream from the title page. If the site has no search form, set the search URL with {query}. CSS selectors are optional. No JavaScript is executed and no DRM is bypassed.",
     "https://host/catalogo.json oppure C:\\percorso\\catalogo.json": "https://host/catalog.json or C:\\path\\catalog.json",
     "Il catalogo è un JSON con 'items'; ogni elemento ha 'title' e 'url' (o 'streams'). Sono supportati URL http/https e file locali.":
         "The catalog is a JSON with 'items'; each item has 'title' and 'url' (or 'streams'). http/https URLs and local files are supported.",

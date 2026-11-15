@@ -1,4 +1,4 @@
-# Architettura di VistoFlow (Python)
+# Architettura di ViewerLAB (Python)
 
 Questo documento descrive il prototipo Python, l'analisi REA del programma
 originale e le scelte tecniche. Il prototipo è **clean-room**: non contiene
@@ -80,7 +80,7 @@ endpoint o logiche dell'app originale.
 | Modulo | Responsabilità |
 |---|---|
 | `models.py` | `Source`, `StreamCandidate`, `ProbeResult`, `SearchOutcome`; validazione e serializzazione. |
-| `config.py` | Percorsi (`%LOCALAPPDATA%\VistoFlow`), lettura/scrittura atomica di `sources.json`, risoluzione `@bundled/`, `file://`, percorsi locali. |
+| `config.py` | Percorsi (`%LOCALAPPDATA%\ViewerLAB`), lettura/scrittura atomica di `sources.json`, risoluzione `@bundled/`, `file://`, percorsi locali. |
 | `sources.py` | Caricamento cataloghi/API JSON, normalizzazione elementi, unione header, rilevamento HLS/MP4; inoltro delle fonti `site` a `html_site`. |
 | `html_site.py` | Ricerca su siti HTML (form/OpenSearch/URL con `{query}`), estrazione risultati con selettori CSS o euristica, risoluzione del flusso dalla pagina del titolo. Nessun JavaScript. |
 | `search.py` | Normalizzazione Unicode, punteggio, deduplica, ricerca parallela con isolamento errori per fonte. |
@@ -219,7 +219,7 @@ con un `finally`, registrando l'esito nel log.
 | GUI `--smoke-test "Bunny"` con selettori | ricerca con `search_url` + selettori CSS, posizione 0.9 s |
 | Ridimensionamento/fullscreen | child window mpv segue il widget (822×343 → 1900×931) |
 | Cattura frame incorporato | PrintWindow del widget video mostra il frame Sintel |
-| Eseguibile PyInstaller | `VistoFlow.exe --smoke-test sintel` → exit 0, log `SMOKE OK` |
+| Eseguibile PyInstaller | `ViewerLAB.exe --smoke-test sintel` → exit 0, log `SMOKE OK` |
 | mpv assente | messaggio "mpv non trovato", exit 1 senza crash |
 
 ---

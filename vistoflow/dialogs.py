@@ -211,7 +211,7 @@ class SourceEditorDialog(QDialog):
                 _("Opzionale: https://www.esempio.it/cerca?q={query}")
             )
             self.hint.setText(
-                _("Inserisci la home del sito: VistoFlow cerca i contenuti e ricava il flusso "
+                _("Inserisci la home del sito: ViewerLAB cerca i contenuti e ricava il flusso "
                 "dalla pagina del titolo. Se il sito non espone un modulo di ricerca, indica "
                 "l'URL di ricerca con {query}. I selettori CSS sono opzionali. "
                 "Nessun JavaScript viene eseguito e nessun DRM viene aggirato.")

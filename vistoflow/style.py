@@ -1,4 +1,4 @@
-"""Foglio di stile delle pagine VistoFlow (palette ispirata a Stream Goat)."""
+"""Foglio di stile delle pagine ViewerLAB (palette ispirata a Stream Goat)."""
 
 THEME = """
 QWidget {

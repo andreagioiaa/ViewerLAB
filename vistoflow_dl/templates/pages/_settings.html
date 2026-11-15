@@ -7,6 +7,9 @@
      straight out of the document - and the tabs are still switched by hand by
      switchSettingsTab(). Only the container changed. -->
 <div id="page-settings" style="display:none">
+  <!-- Le sezioni di ViewerLAB: visibili solo dentro l'app, che le compila
+       con viewerlabSettings() e riceve i clic come messaggi «viewerlab:…». -->
+  <style>body:not(.viewerlab) .viewerlab-only{display:none!important}</style>
   <div class="settings-page">
       <!-- The same head every other page opens with. This one went straight
            into its tabs, which read as a different application the moment the
@@ -44,6 +47,12 @@
         </li>
         <li class="nav-item">
           <a class="nav-link" href="#" data-settings-tab="mcp">MCP</a>
+        </li>
+        <li class="nav-item viewerlab-only">
+          <a class="nav-link" href="#" data-settings-tab="generali">Generali</a>
+        </li>
+        <li class="nav-item viewerlab-only">
+          <a class="nav-link" href="#" data-settings-tab="watchlist">Watchlist</a>
         </li>
       </ul>
 
@@ -298,6 +307,21 @@
       </div>
 
       <div class="settings-pane" data-settings-pane="download" style="display:none">
+      <!-- ── Cartella dei contenuti (ViewerLAB) ────────────────────────── -->
+      <div class="settings-section viewerlab-only">
+        <p class="settings-section-label">Cartella dei contenuti</p>
+        <p class="settings-section-hint">
+          I download finiscono qui, nelle sottocartelle <code>Film</code> e <code>Serie TV</code>.
+          La cartella entra anche nella libreria locale di ViewerLAB.
+        </p>
+        <div class="settings-actions">
+          <code id="vl-library-root">Non impostata</code>
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="vl:chooseRoot">
+            <i class="ti ti-folder me-1"></i>Scegli&hellip;
+          </button>
+        </div>
+      </div>
+
       <!-- ── Performance download ──────────────────────────────────────── -->
       <div class="settings-section">
         <p class="settings-section-label">Download</p>
@@ -545,6 +569,36 @@
           <button class="btn btn-outline-secondary btn-sm" type="button" data-action="cfg:copyMcpSnippet">
             <i class="ti ti-copy me-1"></i>Copia
           </button>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="generali" style="display:none">
+      <!-- ── Generali (ViewerLAB) ──────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Lingua</p>
+        <p class="settings-section-hint">La lingua di ViewerLAB. Si applica al riavvio.</p>
+        <label class="form-label" for="vl-language">Lingua dell&rsquo;interfaccia</label>
+        <select id="vl-language" class="form-select" style="max-width:280px"></select>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="vl:saveLanguage">Salva</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="settings-pane" data-settings-pane="watchlist" style="display:none">
+      <!-- ── Watchlist (ViewerLAB) ─────────────────────────────────────── -->
+      <div class="settings-section">
+        <p class="settings-section-label">Watchlist import</p>
+        <p class="settings-section-hint">
+          Importa il CSV della watchlist di Letterboxd
+          (Settings &rarr; Data &rarr; Export your data). Ogni import aggiunge solo i film nuovi.
+        </p>
+        <div class="settings-actions">
+          <button type="button" class="btn btn-primary btn-sm" data-action="vl:importWatchlist">
+            <i class="ti ti-file-import me-1"></i>Importa CSV&hellip;
+          </button>
+          <div id="vl-watchlist-info" class="form-text"></div>
         </div>
       </div>
       </div>

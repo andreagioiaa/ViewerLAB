@@ -22,3 +22,14 @@ def test_a_broken_file_is_an_empty_store(tmp_path):
     path = tmp_path / "resume.json"
     path.write_text("{not json", encoding="utf-8")
     assert ResumeStore(path).get("x") is None
+
+
+def test_latest_is_the_newest_entry_that_can_be_reopened(tmp_path):
+    store = ResumeStore(tmp_path / "resume.json")
+    assert store.latest() is None
+    store.update("old", 100, 6000, "Vecchio", url="http://x/old.m3u8")
+    store.update("no-url", 100, 6000, "Senza URL")  # voci precedenti: non riapribili
+    store._items["old"]["updated"] = 1
+    store.update("new", 200, 6000, "Nuovo", url="http://x/new.m3u8", referer="http://x/")
+    key, entry = store.latest()
+    assert key == "new" and entry["referer"] == "http://x/"

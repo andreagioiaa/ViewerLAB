@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
     # "unable to open database file", which names neither the path nor the uid.
     check_writable_paths()
     db.run_migrations()
-    # VistoFlow has no Jellyfin: the panel always runs without login.
+    # ViewerLAB has no Jellyfin: the panel always runs without login.
     auth_models.set_setting(auth_models.SETTING_AUTH_MODE, "open")
     auth_session.purge_expired()
     requests_service.register_job_listener()
@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
         domain_task.cancel()
 
 
-app = FastAPI(title="VistoFlow Download", version=__version__, lifespan=lifespan)
+app = FastAPI(title="ViewerLAB Download", version=__version__, lifespan=lifespan)
 
 # Authentication is enforced here, once, for every request. Endpoints are closed
 # by default; app/auth/deps.py holds the explicit public allowlist.

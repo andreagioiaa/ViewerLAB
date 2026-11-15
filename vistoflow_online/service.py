@@ -1,4 +1,4 @@
-"""Pipeline online di VistoFlow: canali, metadati TMDB e flussi VLC.
+"""Pipeline online di ViewerLAB: canali, metadati TMDB e flussi VLC.
 
 Il modulo è volutamente indipendente da Qt: la GUI lo esegue in un thread
 separato tramite ``online_dialog``. Ogni operazione crea il proprio client
@@ -64,7 +64,7 @@ def _media_type(value: str | MediaType) -> MediaType:
 
 
 class OnlineService:
-    """Facciata unica usata dall'interfaccia VistoFlow."""
+    """Facciata unica usata dall'interfaccia ViewerLAB."""
 
     def __init__(
         self,

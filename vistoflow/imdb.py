@@ -49,6 +49,7 @@ class Title:
     description: str = ""
     seasons: int = 0
     episodes: int = 0
+    tmdb_id: int = 0  # per riconoscere lo stesso film nel motore di download
 
     @property
     def url(self) -> str:
@@ -101,6 +102,7 @@ def _parse(meta: dict, kind: str) -> Title:
         description=str(meta.get("description") or ""),
         seasons=len(seasons),
         episodes=sum(1 for video in videos if video.get("season")),
+        tmdb_id=int(meta.get("moviedb_id") or 0) if str(meta.get("moviedb_id") or "").isdigit() else 0,
     )
 
 
@@ -126,7 +128,7 @@ class ImdbClient:
         self._client = client or httpx.Client(
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": "VistoFlow/1.0", "Accept": "application/json"},
+            headers={"User-Agent": "ViewerLAB/1.0", "Accept": "application/json"},
         )
         self._cache_path = cache_path
         self._lock = threading.Lock()

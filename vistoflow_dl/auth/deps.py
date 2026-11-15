@@ -64,7 +64,7 @@ SESSION_ONLY_PATHS = {
     "/api/auth/logout",
 }
 
-# VistoFlow runs the panel in open mode on 127.0.0.1. Without a secret any web
+# ViewerLAB runs the panel in open mode on 127.0.0.1. Without a secret any web
 # page in the user's browser could drive it (CSRF, DNS rebinding), so the
 # desktop launcher sets this per run and hands it over once as ?vf_token=,
 # which becomes a SameSite=Strict cookie. Unset (tests, standalone) = no check.
@@ -178,7 +178,7 @@ class AuthMiddleware:
             return False
         if hmac.compare_digest(request.cookies.get(LAUNCH_COOKIE, "").encode(), expected):
             return True
-        await JSONResponse({"detail": "Apri il pannello da VistoFlow"}, status_code=403)(
+        await JSONResponse({"detail": "Apri il pannello da ViewerLAB"}, status_code=403)(
             scope, receive, send
         )
         return False

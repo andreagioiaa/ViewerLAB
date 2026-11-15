@@ -32,7 +32,7 @@ def run_self_test(query: str = "sintel") -> int:
     except (AttributeError, OSError):
         pass
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-    print("VistoFlow — autotest")
+    print("ViewerLAB — autotest")
     print(f"Catalogo demo: {bundled_path('sources/demo_catalog.json')}")
 
     source = Source(

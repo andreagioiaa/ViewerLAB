@@ -312,9 +312,13 @@ function _tpRenderHero() {
   // A back control, not just a trail. The trail alone was a row of grey text
   // against artwork and read as a caption rather than as the way out.
   document.getElementById('th-crumbs').innerHTML =
-    `<button class="th-back" data-action="tp:back" title="Torna alla ricerca">
-       <i class="ti ti-arrow-left"></i>Cerca
-     </button>` +
+    (_fromWatchlist()
+      ? `<button class="th-back" data-action="tp:back" title="Torna alla watchlist">
+           <i class="ti ti-arrow-left"></i>Watchlist
+         </button>`
+      : `<button class="th-back" data-action="tp:back" title="Torna alla ricerca">
+           <i class="ti ti-arrow-left"></i>Cerca
+         </button>`) +
     `<span class="sep">›</span><span>${escapeHtml(kindLabel)}</span>` +
     `<span class="sep">›</span><span class="th-crumb-here">${escapeHtml(_tp.name || '—')}</span>`;
 
@@ -581,7 +585,7 @@ function _tpRenderEpisodes() {
         </div>
         ${dur}${owned}
         ${wants ? '' : `<button class="btn btn-sm btn-outline-primary" data-action="tp:watch"
-                data-index="${i}" title="Guarda in streaming nel player di VistoFlow">
+                data-index="${i}" title="Guarda in streaming nel player di ViewerLAB">
           <i class="ti ti-player-play"></i>
         </button>`}
         <button class="btn btn-sm ${wants ? 'btn-outline-primary' : 'btn-primary'}"
@@ -617,6 +621,8 @@ async function tpRefreshFollow() { await checkWatchStatus('page'); }
 // Back to wherever the visitor came from, and to the search page when they
 // arrived by pasted link and there is no history to go back to.
 function tpBack() {
+  // ViewerLAB: a film opened from the watchlist goes back to the watchlist
+  if (_fromWatchlist()) { console.info('viewerlab:back'); return; }
   // Back where possible, because it returns to the exact search that was
   // there — query, filters and all — rather than to an empty one.
   if (history.length > 1 && document.referrer !== '') { history.back(); return; }
@@ -897,7 +903,7 @@ async function downloadAllAnime() {
 
 // ── Streaming ─────────────────────────────────────────────────────────────────
 //
-// The panel resolves the stream and hands it to VistoFlow's player, in the same
+// The panel resolves the stream and hands it to ViewerLAB's player, in the same
 // process: nothing is written to disk, and it works from an external browser too.
 
 // Resolves null on cancel, otherwise { download } from the "Guarda e scarica" switch.
@@ -994,3 +1000,57 @@ registerPageHash('detail', {
     params: { s: _tp.season !== _tpSeasons()[0] ? _tp.season : null },
   } : {}),
 });
+
+// ViewerLAB: from the watchlist straight to the film's page (Scarica / Guarda).
+// With a TMDB id (from IMDb/Cinemeta) a candidate is opened only when the
+// source's own metadata carries the same id; without one, only an exact name
+// and year. Anything uncertain shows the search results instead, so a wrong
+// film is never opened silently.
+function _matchKey(text) {
+  return (text || '').normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function _nearYear(item, year) {
+  const found = Number(itemYear(item));
+  return Boolean(year && found && Math.abs(found - Number(year)) <= 1);
+}
+
+function pickFilmByName(results, name, year) {
+  return (results || []).find(r => r.type === 'movie'
+    && _matchKey(r.name) === _matchKey(name) && (!year || _nearYear(r, year))) || null;
+}
+
+async function pickFilmByTmdb(results, year, tmdbId) {
+  const films = (results || []).filter(r => r.type === 'movie');
+  // the same year first: usually the first request is the right one
+  const ordered = [...films.filter(r => _nearYear(r, year)), ...films.filter(r => !_nearYear(r, year))];
+  for (const item of ordered.slice(0, 6)) {
+    try {
+      const meta = await api.get(`/api/metadata/movie/${item.id}`,
+                                 { slug: item.slug || '', version: currentVersion || '' });
+      if (Number(meta.tmdb_id) === Number(tmdbId)) return item;
+    } catch (e) { /* next candidate */ }
+  }
+  return null;
+}
+
+async function openFilmByName(name, year, tmdbId) {
+  await ensureDomain();
+  let results = [];
+  try {
+    results = await api.get('/api/search', { q: name, source: 'streamingcommunity', media_type: 'movie' });
+  } catch (e) { /* the search page below shows the error */ }
+  const pick = tmdbId ? await pickFilmByTmdb(results, year, tmdbId) : pickFilmByName(results, name, year);
+  if (pick) { _watchlistHash = titleHash(pick); _tpSeed = pick; location.hash = _watchlistHash; }
+  else { _watchlistHash = ''; navigate('search', [], { q: name }); }
+  // after the hashchange has drawn the page, so ViewerLAB never shows the previous one
+  setTimeout(() => console.info('viewerlab:opened'), 80);
+}
+
+// The film page the watchlist opened: its back button returns to the watchlist.
+let _watchlistHash = '';
+function _fromWatchlist() {
+  // the page then adds its own params (?s=1), so only the path is compared
+  return Boolean(_watchlistHash) && location.hash.split('?')[0] === _watchlistHash.split('?')[0];
+}

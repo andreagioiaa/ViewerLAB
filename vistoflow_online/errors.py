@@ -1,4 +1,4 @@
-"""Eccezioni condivise del motore online di VistoFlow."""
+"""Eccezioni condivise del motore online di ViewerLAB."""
 
 
 class MediaCenterError(Exception):

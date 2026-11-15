@@ -1,4 +1,4 @@
-"""Interfaccia di ricerca online integrata in VistoFlow Pro.
+"""Interfaccia di ricerca online integrata in ViewerLAB Pro.
 
 Il dialogo non lancia processi esterni: usa la pipeline ``vistoflow_online``
 in un thread dedicato e, quando l'utente sceglie un flusso, lo passa al
@@ -303,7 +303,7 @@ class OnlineSearchDialog(QDialog):
         self._initialized = False
 
         self._ensure_channels_dir()
-        self.setWindowTitle("VistoFlow — Ricerca canali")
+        self.setWindowTitle("ViewerLAB — Ricerca canali")
         self.setMinimumSize(960, 660)
         self.resize(1080, 760)
         self._build_ui()
@@ -991,7 +991,7 @@ class OnlineSearchDialog(QDialog):
             QMessageBox.information(
                 self,
                 "Ricerca online",
-                "VistoFlow usa solo fonti autorizzate configurate in "
+                "ViewerLAB usa solo fonti autorizzate configurate in "
                 f"{self._service.channels_dir}.\n\n"
                 "Il motore non aggira DRM, paywall o autenticazioni. "
                 "I resolver supportano URL HLS/MP4, Mixdrop, Voe, Supervideo "

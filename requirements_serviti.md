@@ -1,7 +1,7 @@
 # Requisiti e diagnosi dei link — modalità Online
 
 Questo file riassume come funziona Veezie.st (analisi REA), perché i link della
-modalità **Online** di VistoFlow davano errore, cosa è stato corretto e cosa
+modalità **Online** di ViewerLAB davano errore, cosa è stato corretto e cosa
 resta da fare.
 
 ## 1. Come funziona Veezie.st (evidenze REA)
@@ -19,7 +19,7 @@ Analisi statica di `D:\PROGRAMMI\Veezie.st\resources\app.asar`
 - È un guscio **Electron** con 4 `BrowserWindow`, 2 preload, 12 API esposte
   tramite context bridge e 35 handler IPC nel main process.
 - `mpv-manager.js` avvia **mpv come processo figlio** (`resources\bin\mpv.exe`
-  è incluso nell'installazione) e lo pilota via IPC JSON. VistoFlow fa la stessa
+  è incluso nell'installazione) e lo pilota via IPC JSON. ViewerLAB fa la stessa
   cosa in `vistoflow/player.py`.
 - `hls-proxy.js` è un **proxy HLS locale**: inoltra manifest e segmenti a mpv
   aggiungendo gli header richiesti (Referer, User-Agent).
@@ -35,7 +35,7 @@ Analisi statica di `D:\PROGRAMMI\Veezie.st\resources\app.asar`
 analizzati in questo passaggio. Il codice della UI remota non è nel pacchetto,
 quindi non è analizzabile staticamente.
 
-## 2. Perché i link di VistoFlow davano errore
+## 2. Perché i link di ViewerLAB davano errore
 
 | Sintomo | Causa | Stato |
 |---|---|---|
@@ -49,7 +49,7 @@ quindi non è analizzabile staticamente.
 
 La fonte configurata (StreamingCommunity) distribuisce film e serie senza
 licenza. Non ho scritto un estrattore specifico per quel sito o per i suoi host
-video (token, playlist firmate, proxy con header). VistoFlow resta **generico**:
+video (token, playlist firmate, proxy con header). ViewerLAB resta **generico**:
 riproduce flussi da fonti che l'utente ha il diritto di usare e non aggira
 protezioni.
 

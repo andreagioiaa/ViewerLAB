@@ -1,4 +1,4 @@
-"""Tema scuro condiviso dall'interfaccia di VistoFlow Pro."""
+"""Tema scuro condiviso dall'interfaccia di ViewerLAB Pro."""
 
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QStyleFactory

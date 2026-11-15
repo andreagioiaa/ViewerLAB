@@ -1,4 +1,4 @@
-"""Gestione dati di VistoFlow Pro.
+"""Gestione dati di ViewerLAB Pro.
 
 Il file di configurazione contiene:
     library_paths  -> cartelle / file aggiunti alla libreria
@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import sys
+import time
 
 VIDEO_EXTENSIONS = (
     ".mp4", ".mkv", ".avi", ".mov", ".m4v", ".webm", ".ts", ".flv", ".wmv", ".mpg", ".mpeg"
@@ -572,9 +573,20 @@ class MediaManager:
             "total_duration": duration,
             # Un film già segnato come visto resta visto anche se viene riavviato.
             "status": bool(previous.get("status")) or bool(finished),
+            "updated": time.time(),  # per «Continua a guardare» nella Home
         }
         if save:
             self.save_config()
+
+    def last_watched(self):
+        """(istante, percorso) dell'ultimo file lasciato a metà, o None."""
+        started = [
+            (entry["updated"], key)
+            for key, entry in (self.data.get("media_history") or {}).items()
+            if isinstance(entry, dict) and entry.get("updated") and not entry.get("status")
+            and (entry.get("last_timestamp") or 0) > 5000 and os.path.isfile(key)
+        ]
+        return max(started, default=None)
 
     def force_mark_as_seen(self, filepath):
         key = self._path_key(filepath)

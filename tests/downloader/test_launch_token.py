@@ -1,4 +1,4 @@
-"""The per-run secret VistoFlow uses to keep other local pages out of the panel."""
+"""The per-run secret ViewerLAB uses to keep other local pages out of the panel."""
 
 from tests.downloader.conftest import enable_open_mode
 from vistoflow_dl.auth import deps

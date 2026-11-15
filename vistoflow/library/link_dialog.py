@@ -195,13 +195,13 @@ class SavedLinksDialog(QDialog):
         self._workers: set[AsyncOperation] = set()
         self._busy = False
 
-        self.setWindowTitle("I miei link · VistoFlow")
+        self.setWindowTitle("I miei link · ViewerLAB")
         self.resize(820, 520)
 
         title = QLabel("🔗  I miei link")
         title.setObjectName("DialogTitle")
         subtitle = QLabel(
-            "Salva una pagina o un flusso. Se il link scade, VistoFlow prova "
+            "Salva una pagina o un flusso. Se il link scade, ViewerLAB prova "
             "a rileggere la pagina sorgente e a ottenere un flusso nuovo."
         )
         subtitle.setWordWrap(True)

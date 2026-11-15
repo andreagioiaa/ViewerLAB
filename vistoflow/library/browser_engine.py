@@ -1,7 +1,7 @@
 """Motore browser isolato basato su PySide6/QtWebEngine.
 
 Il browser viene eseguito in un processo separato, così un crash di
-QtWebEngine non chiude VistoFlow. La finestra nativa del processo viene poi
+QtWebEngine non chiude ViewerLAB. La finestra nativa del processo viene poi
 incorporata nel dialogo Qt della libreria.
 
 Il processo comunica con il padre tramite un socket TCP su 127.0.0.1, così
@@ -217,11 +217,11 @@ def main() -> int:
         return 2
 
     start_url = _argument_value("--url") or "about:blank"
-    # Gli argomenti di VistoFlow (--port/--url) non servono a Qt.
+    # Gli argomenti di ViewerLAB (--port/--url) non servono a Qt.
     app = QApplication([sys.argv[0]])
 
     window = QMainWindow()
-    window.setWindowTitle("VistoFlow Browser Engine")
+    window.setWindowTitle("ViewerLAB Browser Engine")
     window.setWindowFlags(Qt.WindowType.FramelessWindowHint)
     window.resize(900, 650)
     window.move(-32000, -32000)

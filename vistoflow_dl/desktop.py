@@ -1,7 +1,7 @@
-"""Avvia il pannello di download dentro VistoFlow: uvicorn in un thread su 127.0.0.1.
+"""Avvia il pannello di download dentro ViewerLAB: uvicorn in un thread su 127.0.0.1.
 
 Il pannello resta un'app FastAPI a sé (stato dei download in memoria, un solo
-processo): VistoFlow lo ospita e lo mostra in una pagina QtWebEngine.
+processo): ViewerLAB lo ospita e lo mostra in una pagina QtWebEngine.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 def configure_paths(data_dir: Path) -> None:
-    """File del pannello sotto la cartella dati di VistoFlow.
+    """File del pannello sotto la cartella dati di ViewerLAB.
 
     Va chiamata prima di importare ``vistoflow_dl.config``, che legge l'ambiente
     all'import. Una variabile già impostata dall'utente vince.
@@ -29,14 +29,14 @@ def configure_paths(data_dir: Path) -> None:
         "DB_FILE": root / "panel.db",
         "SCHEDULE_FILE": root / "schedule.json",
         "TMP_DIR": root / "tmp",
-        "VIDEOS_DIR": Path.home() / "Videos" / "VistoFlow",
+        "VIDEOS_DIR": Path.home() / "Videos" / "ViewerLAB",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, str(value))
 
 
 class PanelServer:
-    """Il server del pannello, avviato una volta per sessione di VistoFlow."""
+    """Il server del pannello, avviato una volta per sessione di ViewerLAB."""
 
     def __init__(self, data_dir: Path) -> None:
         configure_paths(data_dir)

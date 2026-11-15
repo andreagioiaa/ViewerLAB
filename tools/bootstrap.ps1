@@ -1,4 +1,4 @@
-# VistoFlow - prepara l'ambiente e avvia l'app su Windows 10/11.
+# ViewerLAB - prepara l'ambiente e avvia l'app su Windows 10/11.
 # Richiamato da run.bat, run.ps1 e setup.bat. Funziona con Windows PowerShell 5.1.
 #
 #   -SetupOnly   prepara tutto senza avviare l'app (setup.bat)
@@ -20,17 +20,17 @@ Set-Location -LiteralPath $Root
 # Python 3.15 in particolare rompe alcune dipendenze ("'lazy_import' object is not callable").
 $PyVersion = "3.14"
 
-function Say([string]$Text) { Write-Host "[VistoFlow] $Text" }
+function Say([string]$Text) { Write-Host "[ViewerLAB] $Text" }
 
 function Fail([string]$Text) {
     Write-Host ""
-    Write-Host "[VistoFlow] $Text" -ForegroundColor Red
+    Write-Host "[ViewerLAB] $Text" -ForegroundColor Red
     exit 1
 }
 
 function Ask([string]$Question) {
     if ($Yes) { return $true }
-    $answer = Read-Host "[VistoFlow] $Question [S/n]"
+    $answer = Read-Host "[ViewerLAB] $Question [S/n]"
     return ($answer -eq "" -or $answer -match "^[sSyY]")
 }
 
@@ -88,12 +88,12 @@ function Find-Vlc {
 # PySide6 contiene file con percorsi di ~165 caratteri sotto site-packages: con il
 # progetto in una cartella profonda si supera il limite di 260 di Windows e pip
 # fallisce. In quel caso l'ambiente va nella cartella dati, dal percorso corto.
-$DataDir = if ($env:VISTOFLOW_DATA) { $env:VISTOFLOW_DATA } else { Join-Path $env:LOCALAPPDATA "VistoFlow" }
+$DataDir = if ($env:VISTOFLOW_DATA) { $env:VISTOFLOW_DATA } else { Join-Path $env:LOCALAPPDATA "ViewerLAB" }
 if ($Root.Length -le 70) {
     $Venv = Join-Path $Root ".venv"
 } else {
     $Venv = Join-Path $DataDir "venv"
-    if ((Join-Path $Venv "x").Length -gt 75) { Fail "Percorso troppo lungo per Python: sposta il progetto in una cartella piu' corta (es. C:\VistoFlow)." }
+    if ((Join-Path $Venv "x").Length -gt 75) { Fail "Percorso troppo lungo per Python: sposta il progetto in una cartella piu' corta (es. C:\ViewerLAB)." }
 }
 $VenvPy = Join-Path $Venv "Scripts\python.exe"
 $VenvPyw = Join-Path $Venv "Scripts\pythonw.exe"
@@ -148,7 +148,7 @@ if (-not $mpv) {
 }
 
 if ($SetupOnly) {
-    Say "Ambiente pronto. Avvia VistoFlow con run.bat."
+    Say "Ambiente pronto. Avvia ViewerLAB con run.bat."
     exit 0
 }
 
@@ -164,8 +164,8 @@ if ($AppArgs) { $argList += $AppArgs }
 $app = Start-Process -FilePath $VenvPyw -ArgumentList $argList -WorkingDirectory $Root -PassThru
 if (-not $app.WaitForExit(8000)) { exit 0 }
 if ($app.ExitCode -eq 0) { exit 0 }
-Say "VistoFlow si e' chiuso con un errore (codice $($app.ExitCode))."
-$log = Join-Path $env:LOCALAPPDATA "VistoFlow\vistoflow.log"
+Say "ViewerLAB si e' chiuso con un errore (codice $($app.ExitCode))."
+$log = Join-Path $env:LOCALAPPDATA "ViewerLAB\viewerlab.log"
 if ((Test-Path -LiteralPath $log) -and ((Get-Item -LiteralPath $log).LastWriteTime -ge $started)) {
     Say "Ultime righe di $log :"
     Get-Content -LiteralPath $log -Tail 25

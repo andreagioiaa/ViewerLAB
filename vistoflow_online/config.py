@@ -24,7 +24,7 @@ def _app_root() -> Path:
 PROJECT_ROOT = _app_root()
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "VistoFlowPro/1.0 (libreria locale film e serie TV)"
+    "ViewerLABPro/1.0 (libreria locale film e serie TV)"
 )
 
 

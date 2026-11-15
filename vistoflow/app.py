@@ -1,4 +1,4 @@
-"""Punto di ingresso Qt di VistoFlow."""
+"""Punto di ingresso Qt di ViewerLAB."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 def configure_logging(level: str = "INFO") -> None:
     handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
     try:
-        log_path = config.data_dir() / "vistoflow.log"
+        log_path = config.data_dir() / "viewerlab.log"
         handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
     except OSError:
         pass
@@ -32,8 +32,8 @@ def configure_logging(level: str = "INFO") -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="vistoflow",
-        description="VistoFlow — libreria, ricerca IMDb e fonti online.",
+        prog="viewerlab",
+        description="ViewerLAB — libreria, ricerca IMDb e fonti online.",
     )
     parser.add_argument(
         "--self-test",
@@ -58,7 +58,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--data-dir",
         metavar="DIR",
-        help="Cartella per configurazione e log (default: LOCALAPPDATA/VistoFlow).",
+        help="Cartella per configurazione e log (default: LOCALAPPDATA/ViewerLAB).",
     )
     parser.add_argument(
         "--list-sources",
@@ -71,7 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Livello di log (default: INFO).",
     )
-    parser.add_argument("--version", action="version", version=f"VistoFlow {__version__}")
+    parser.add_argument("--version", action="version", version=f"ViewerLAB {__version__}")
     return parser
 
 
@@ -108,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     from .main_window import MainWindow
 
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("VistoFlow")
-    app.setOrganizationName("VistoFlow")
+    app.setApplicationName("ViewerLAB")
+    app.setOrganizationName("ViewerLAB")
     apply_theme(app)
 
     smoke = args.smoke_test is not None

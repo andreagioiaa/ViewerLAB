@@ -1,4 +1,4 @@
-"""Ricerca copertine online per VistoFlow Pro.
+"""Ricerca copertine online per ViewerLAB Pro.
 
 Usa servizi pubblici senza bisogno di chiavi API:
     IMDb   -> suggerimenti con poster (film e serie TV)
@@ -31,7 +31,7 @@ except Exception:  # pragma: no cover - fallback senza certifi
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "VistoFlowPro/1.0 (libreria locale film e serie TV)"
+    "ViewerLABPro/1.0 (libreria locale film e serie TV)"
 )
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 AUTO_IMPORT_SCORE = 60

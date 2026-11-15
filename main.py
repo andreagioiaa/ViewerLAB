@@ -1,4 +1,4 @@
-"""VistoFlow — avvio: schermata di benvenuto (Locale / Online)."""
+"""ViewerLAB — avvio: schermata di benvenuto (Locale / Online)."""
 
 import sys
 

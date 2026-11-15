@@ -1,0 +1,60 @@
+# Crea ViewerLAB.exe (zip portatile) e l'installer ViewerLAB.msi e li pubblica
+# in una Release di GitHub. Parte col tasto "Run workflow" (tab Actions) o
+# quando si pubblica un tag v* (es. git tag v0.3.0 && git push --tags).
+name: Build eseguibili
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write  # per creare la Release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Dipendenze
+        run: python -m pip install -r requirements.txt pyinstaller -c constraints.txt
+
+      - name: WiX 5
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Versione
+        id: version
+        shell: bash
+        run: echo "value=$(python -c 'import vistoflow; print(vistoflow.__version__)')" >> "$GITHUB_OUTPUT"
+
+      - name: Build .exe e .msi
+        run: python build_exe.py --clean --msi
+
+      # nomi fissi: i link del README puntano a releases/latest/download/<nome>
+      - name: File da pubblicare
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/ViewerLAB -DestinationPath dist/ViewerLAB-portable.zip
+          Copy-Item "dist/ViewerLAB-${{ steps.version.outputs.value }}.msi" dist/ViewerLAB.msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ViewerLAB-${{ steps.version.outputs.value }}
+          path: |
+            dist/ViewerLAB.msi
+            dist/ViewerLAB-portable.zip
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', steps.version.outputs.value) }}
+          name: ViewerLAB ${{ steps.version.outputs.value }}
+          files: |
+            dist/ViewerLAB.msi
+            dist/ViewerLAB-portable.zip

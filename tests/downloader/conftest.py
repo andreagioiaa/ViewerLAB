@@ -1,6 +1,6 @@
 """Shared test fixtures.
 
-VistoFlow has no Jellyfin: accounts are created directly in the database so the
+ViewerLAB has no Jellyfin: accounts are created directly in the database so the
 request queue and permission tests keep exercising the panel's own logic.
 """
 

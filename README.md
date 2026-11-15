@@ -1,19 +1,41 @@
-# VistoFlow
+# ViewerLAB
 
 Media center desktop (PySide6) in un'unica finestra, con barra laterale in stile
 Stream Goat:
 
 | Pagina | Cosa fa | Player |
 |---|---|---|
-| **▦ Libreria** | Film e serie TV sul disco: copertine, TAG, storico, canali, link salvati, browser integrato, **scheda IMDb** di ogni film/serie. | VLC |
-| **⌕ Cerca** | Ricerca su **IMDb** (locandina, voto, durata, generi, regia, cast, trama) e, nella stessa pagina, sulle tue fonti online. | — |
-| **▶ Player** | Riproduzione dei flussi trovati nelle fonti online (verificati prima). | mpv |
-| **☰ Fonti** | Cataloghi JSON, API, siti, link diretti. | — |
-| **↓ Download** | Pannello di download da StreamingCommunity e AnimeUnity: ricerca, film/serie/anime, coda, serie seguite, notifiche, hook, file manager, server MCP. | — |
-| **⚙ Impostazioni** | Lingua italiano/inglese. | — |
+| **🏠 Home** | Ricerca su StreamingCommunity e AnimeUnity, vetrine *Di tendenza* e **Continua a guardare**. Dalla scheda di un titolo: **Guarda** o **Scarica**. | mpv |
+| **📁 Libreria** | Film e serie TV sul disco, con copertine e **scheda IMDb**. | VLC |
+| **🎬 Watchlist** | La watchlist di **Letterboxd** importata da CSV, ordinabile per durata, anno e voto IMDb; un clic apre il film con *Guarda* / *Scarica*. | — |
+| **▶ Player** | Riproduzione dei flussi online. | mpv |
+| **↓ Download** | Coda dei download con avanzamento, pausa e ripresa. | — |
+| **🔔 Serie seguite** | Serie e anime che scaricano da soli i nuovi episodi. | — |
+| **🗂 File** | File manager dei contenuti scaricati. | — |
+| **⚙ Impostazioni** | Sorgente, librerie, nomi, download e **cartella dei contenuti**, notifiche, hook, MCP, **Generali** (lingua) e **Watchlist** (import CSV). | — |
 
-> **Uso legale**: configura solo fonti autorizzate e contenuti leciti. VistoFlow
+> **Uso legale**: configura solo fonti autorizzate e contenuti leciti. ViewerLAB
 > non aggira DRM, paywall, login o altre protezioni.
+
+## Scarica
+
+Per usare ViewerLAB senza installare Python:
+
+| File | Cosa è |
+|---|---|
+| [**ViewerLAB.msi**](https://github.com/andreagioiaa/ViewerLAB/releases/latest/download/ViewerLAB.msi) | Installer: doppio clic, nessun permesso di amministratore. Crea il collegamento nel menu Start. |
+| [**ViewerLAB-portable.zip**](https://github.com/andreagioiaa/ViewerLAB/releases/latest/download/ViewerLAB-portable.zip) | Versione portatile: estrai lo zip e avvia `ViewerLAB.exe`. |
+
+Tutte le versioni: [Releases](https://github.com/andreagioiaa/ViewerLAB/releases).
+
+- L'installer mette l'app in `%LOCALAPPDATA%\Programs\ViewerLAB` (solo per il
+  tuo utente) e si disinstalla da *Impostazioni di Windows → App*. Una versione
+  nuova sostituisce quella vecchia; libreria, watchlist e impostazioni restano.
+- **VLC** (player della Libreria) e **mpv** (player online) non sono inclusi:
+  installali con `winget install VideoLAN.VLC` e `winget install mpv`, oppure
+  copia `mpv.exe` nella cartella `bin\` accanto a `ViewerLAB.exe`.
+- Windows può mostrare *"Windows ha protetto il PC"* perché l'eseguibile non è
+  firmato: *Ulteriori informazioni → Esegui comunque*.
 
 ## Download (StreamingCommunity / AnimeUnity)
 
@@ -28,15 +50,15 @@ file manager e server MCP per agenti AI.
 
 - **Guarda senza scaricare**: nella scheda di un film (pulsante *Guarda*) o accanto
   a ogni episodio (▶) il pannello risolve il flusso e lo apre nel **player mpv**
-  di VistoFlow, senza scrivere nulla su disco. Funziona anche da *Apri nel
-  browser*: il video parte comunque nella finestra di VistoFlow.
-- Il pannello gira in VistoFlow su `127.0.0.1` (porta casuale) e parte con
+  di ViewerLAB, senza scrivere nulla su disco. Funziona anche da *Apri nel
+  browser*: il video parte comunque nella finestra di ViewerLAB.
+- Il pannello gira in ViewerLAB su `127.0.0.1` (porta casuale) e parte con
   l'app, così download programmati e serie seguite proseguono da soli finché
-  VistoFlow è aperto. **Apri nel browser** lo apre nel browser di sistema.
+  ViewerLAB è aperto. **Apri nel browser** lo apre nel browser di sistema.
 - Al primo uso imposta il **dominio della sorgente** in *Impostazioni → Sorgente*
   (o accetta quello proposto) e le **librerie** dove salvare i file.
-- Dati in `%LOCALAPPDATA%\VistoFlow\download\`; senza librerie i file vanno in
-  `~/Videos/VistoFlow`. FFmpeg: dal `PATH` o quello incluso in `imageio-ffmpeg`.
+- Dati in `%LOCALAPPDATA%\ViewerLAB\download\`; senza librerie i file vanno in
+  `~/Videos/ViewerLAB`. FFmpeg: dal `PATH` o quello incluso in `imageio-ffmpeg`.
 - Note tecniche e regole del codice: [docs/DOWNLOAD.md](docs/DOWNLOAD.md).
 
 ## IMDb
@@ -55,13 +77,13 @@ IMDb usato anche da Stream Goat: non serve una chiave API.
   offre **Riproduci dalla libreria** (se il titolo è tra i tuoi file),
   **Cerca nelle tue fonti** e **Apri su IMDb**.
 - Gli abbinamenti sono salvati in `visto_settings.json` (sezione `imdb`), le
-  risposte di Cinemeta in `%LOCALAPPDATA%\VistoFlow\imdb_cache.json` (14 giorni).
+  risposte di Cinemeta in `%LOCALAPPDATA%\ViewerLAB\imdb_cache.json` (14 giorni).
 - Le trame sono in inglese (Cinemeta non ha la localizzazione italiana).
 
 ## Lingua (italiano / inglese)
 
 **⚙ Impostazioni → Lingua dell'interfaccia** permette di scegliere *Italiano* o
-*English*. La scelta viene salvata in `%LOCALAPPDATA%\VistoFlow\settings.json` e
+*English*. La scelta viene salvata in `%LOCALAPPDATA%\ViewerLAB\settings.json` e
 applicata al riavvio (il dialogo propone **Riavvia ora**). Sono tradotte le
 pagine Cerca, Player, Fonti e Impostazioni; la Libreria è in italiano.
 
@@ -72,7 +94,7 @@ Veezie.st e architettura: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Diagnosi
 dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md).
 
 - mpv non è incluso: imposta `MPV_PATH` oppure copia `mpv.exe` in `bin/`.
-- Configurazione e log: `%LOCALAPPDATA%\VistoFlow\` (`sources.json`, `vistoflow.log`).
+- Configurazione e log: `%LOCALAPPDATA%\ViewerLAB\` (`sources.json`, `viewerlab.log`).
   Al primo avvio fonti e lingua vengono copiate dalla vecchia cartella `ViewerLAB`.
 - Riga di comando: `python main.py --self-test sintel`, `--autoplay QUERY`,
   `--smoke-test QUERY`, `--mpv PATH`, `--data-dir DIR`, `--list-sources`.
@@ -82,7 +104,7 @@ dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md
 
 ### Ricerca online integrata
 - Il pulsante **🌐 Online** nella barra superiore apre la ricerca dentro
-  VistoFlow.
+  ViewerLAB.
 - I canali si configurano con file **JSON/YAML** nella cartella `channels/`
   (selettori CSS generici, nessun sito hardcodato). Vedi
   [`channels/README.md`](channels/README.md).
@@ -98,7 +120,7 @@ dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md
   `User-Agent` e `Referer` necessari. Se vengono trovati più flussi,
   una finestra permette di sceglierli e di copiare il comando VLC equivalente.
 - È disponibile anche **🔗 URL** per risolvere un link `.m3u8`, `.mp4` o una
-  pagina generica: VistoFlow cerca iframe, tag video e URL HLS/MP4 anche dentro
+  pagina generica: ViewerLAB cerca iframe, tag video e URL HLS/MP4 anche dentro
   gli script e, se serve, apre un livello di embed.
 - La ricerca, il download dei poster e la risoluzione avvengono in background:
   l'interfaccia non si blocca.
@@ -111,18 +133,18 @@ dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md
 - I link sono salvati in `visto_settings.json` sotto `online.saved_links` e
   restano disponibili dopo il riavvio.
 - **Aggiorna link** rilegge la pagina e salva l'ultimo flusso trovato.
-- Se durante la riproduzione VLC rileva un link scaduto, VistoFlow prova
+- Se durante la riproduzione VLC rileva un link scaduto, ViewerLAB prova
   automaticamente a rileggere la pagina sorgente o il risultato del canale e a
   ripartire con un flusso nuovo (massimo due tentativi). Per un flusso diretto
   senza pagina sorgente non è possibile rigenerare il link: in quel caso indica
   la pagina che contiene il player.
 - Se il player incorporato blocca le richieste automatiche (ad esempio con
-  `HTTP 403`, Cloudflare, login o DRM), VistoFlow non aggira la protezione:
+  `HTTP 403`, Cloudflare, login o DRM), ViewerLAB non aggira la protezione:
   usa una fonte autorizzata o un flusso diretto lecito.
 
 ### Browser integrato
 - Il pulsante **🧭** nella barra superiore apre un browser Chromium/WebEngine
-  dentro VistoFlow, con barra degli indirizzi, indietro/avanti, ricarica,
+  dentro ViewerLAB, con barra degli indirizzi, indietro/avanti, ricarica,
   copia URL e **Apri nel browser** di sistema.
 - Da **I miei link**, il pulsante **🌐 Apri pagina** apre il link selezionato
   nel browser integrato; la stessa cosa avviene da **Apri pagina** nei
@@ -134,7 +156,7 @@ dei link e soluzione proposta: [requirements_serviti.md](requirements_serviti.md
 - Il browser resta sulla stessa pagina e blocca popup, finestre secondarie e
   nuove tab. Non estrae il flusso per VLC e non aggira Cloudflare, CAPTCHA,
   paywall, login o DRM.
-- Se il sito non carica nel browser integrato, VistoFlow mostra un errore
+- Se il sito non carica nel browser integrato, ViewerLAB mostra un errore
   esplicito (incluso il dettaglio di rete) invece di lasciare il caricamento
   sospeso. Usa **Apri nel browser** per passare a Chrome/Edge/Firefox.
 
@@ -209,7 +231,7 @@ tutto da solo, e dai successivi parte in pochi secondi.
   `constraints.txt`) e le reinstalla solo quando quei file cambiano.
 - **VLC** (obbligatorio, player della Libreria) e **mpv** (consigliato, player
   delle fonti online): se mancano propone di installarli con `winget`.
-- Poi avvia VistoFlow **senza finestra del cmd**. Se l'app si chiude subito
+- Poi avvia ViewerLAB **senza finestra del cmd**. Se l'app si chiude subito
   con un errore, il cmd resta aperto e mostra le ultime righe del log.
 
 ```bat
@@ -229,7 +251,7 @@ l'ambiente senza avviare l'app. In PowerShell:
 [`tools/bootstrap.ps1`](tools/bootstrap.ps1).
 
 Se il progetto sta in una cartella dal percorso molto lungo (oltre ~70
-caratteri), l'ambiente va in `%LOCALAPPDATA%\VistoFlow\venv` invece che in
+caratteri), l'ambiente va in `%LOCALAPPDATA%\ViewerLAB\venv` invece che in
 `.venv`: alcuni file di PySide6 supererebbero il limite di 260 caratteri di
 Windows.
 
@@ -259,13 +281,16 @@ main.py              # avvio + dispatch del processo browser
 vistoflow/           # finestra unica, IMDb, lingua, fonti online, player mpv
   app.py main_window.py style.py imdb.py i18n.py dialogs.py player*.py
   html_site.py probe.py search.py sources.py models.py config.py selftest.py
-  library/           # libreria locale (ex VistoFlow Pro)
+  library/           # libreria locale (ex ViewerLAB Pro)
     window.py dialogs.py media_manager.py player_widget.py online_dialog.py
     link_dialog.py browser_dialog.py browser_engine.py cover_fetcher.py theme.py
 vistoflow_online/    # motore canali/resolver/TMDB usato dalla libreria
 channels/            # canali JSON/YAML dell'utente
 sources/             # catalogo demo delle fonti online
 bin/                 # metti qui mpv.exe (non versionato)
+installer/           # ViewerLAB.wxs: installer .msi (WiX 5)
+build.bat            # doppio clic: crea .exe e .msi in dist/
+.github/workflows/   # build.yml: .exe e .msi pubblicati nelle Releases
 tests/               # pytest
 docs/                # ONLINE.md, ARCHITECTURE.md
 ```
@@ -273,13 +298,40 @@ docs/                # ONLINE.md, ARCHITECTURE.md
 `visto_settings.json` e `covers/` (dati della libreria) restano nella
 cartella dell'app e non sono versionati.
 
-## Creare l'eseguibile
+## Creare l'eseguibile (.exe) e l'installer (.msi)
+
+### Sul tuo PC
+
+Doppio clic su **`build.bat`** (dopo aver eseguito `setup.bat` almeno una volta).
+Crea `dist\ViewerLAB\ViewerLAB.exe` e, se WiX è installato, anche
+`dist\ViewerLAB-<versione>.msi`; alla fine apre la cartella `dist`. Per il `.msi`
+serve una sola volta:
 
 ```bat
-.venv\Scripts\python.exe -m pip install pyinstaller
-.venv\Scripts\python.exe build_exe.py --clean
+winget install Microsoft.DotNet.SDK.8
+dotnet tool install --global wix --version 5.0.2
 ```
 
-Il risultato è `dist\VistoFlow\VistoFlow.exe`. mpv e VLC non sono inclusi: copia
-`mpv.exe` in `dist\VistoFlow\bin\` e installa VLC. Il browser integrato riusa lo
+A mano: `.venv\Scripts\python.exe build_exe.py --clean --msi` (senza `--msi`
+solo l'exe, con `--onefile` un unico `ViewerLAB.exe`). L'installer è descritto
+in [`installer/ViewerLAB.wxs`](installer/ViewerLAB.wxs).
+
+### Su GitHub (per il download)
+
+Il workflow [`build.yml`](.github/workflows/build.yml) crea `.exe` e `.msi` su
+una macchina Windows di GitHub e li pubblica nella pagina
+[Releases](https://github.com/andreagioiaa/ViewerLAB/releases), da cui partono
+i link della sezione [Scarica](#scarica).
+
+1. Fai commit e push delle modifiche.
+2. Su GitHub apri **Actions → Build eseguibili → Run workflow**. In alternativa
+   pubblica un tag: `git tag v0.3.0` e `git push --tags`.
+3. Dopo circa 10–15 minuti la release `v<versione>` contiene `ViewerLAB.msi`
+   e `ViewerLAB-portable.zip`.
+
+La versione viene da `vistoflow/__init__.py` (`__version__`): aumentala prima
+di una nuova release, altrimenti i file della release esistente vengono
+sostituiti. I link *latest* puntano sempre all'ultima release pubblicata.
+
+mpv e VLC non sono inclusi negli eseguibili. Il browser integrato riusa lo
 stesso `.exe` con `--browser-engine`.

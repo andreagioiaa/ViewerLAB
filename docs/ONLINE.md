@@ -1,4 +1,4 @@
-# VistoFlow — modalità Online
+# ViewerLAB — modalità Online
 
 Prototipo **clean-room** in Python di un media center desktop:
 
@@ -33,7 +33,7 @@ In ordine di priorità, `vistoflow` cerca mpv in:
 
 1. `--mpv PATH`;
 2. variabile d'ambiente `MPV_PATH`;
-3. cartella `bin/` accanto all'app (per l'exe: `dist/VistoFlow/bin/mpv.exe`);
+3. cartella `bin/` accanto all'app (per l'exe: `dist/ViewerLAB/bin/mpv.exe`);
 4. `PATH` di sistema.
 
 ```powershell
@@ -73,10 +73,10 @@ oppure:
 La configurazione viene salvata automaticamente in:
 
 ```
-%LOCALAPPDATA%\VistoFlow\sources.json
+%LOCALAPPDATA%\ViewerLAB\sources.json
 ```
 
-I log finiscono in `%LOCALAPPDATA%\VistoFlow\vistoflow.log`.
+I log finiscono in `%LOCALAPPDATA%\ViewerLAB\viewerlab.log`.
 Usa `--data-dir DIR` per isolare configurazione e log (utile nei test).
 
 ### Riga di comando
@@ -87,7 +87,7 @@ Usa `--data-dir DIR` per isolare configurazione e log (utile nei test).
 | `--autoplay QUERY` | Apre la GUI e riproduce il primo risultato. |
 | `--smoke-test [QUERY]` | Come autoplay, ma esce con codice 0/1 (usato per la CI). |
 | `--mpv PATH` | Percorso esplicito di mpv. |
-| `--data-dir DIR` | Cartella per `sources.json` e `vistoflow.log`. |
+| `--data-dir DIR` | Cartella per `sources.json` e `viewerlab.log`. |
 | `--list-sources` | Stampa le fonti configurate. |
 | `--log-level LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `--version` | Versione. |
@@ -150,7 +150,7 @@ https://host/api/search?q={query}
 
 La risposta deve essere JSON con una lista `items` (o direttamente una lista)
 nello stesso formato del catalogo. La ricerca lato server è quindi delegata
-all'API configurata; VistoFlow filtra e ordina localmente i risultati.
+all'API configurata; ViewerLAB filtra e ordina localmente i risultati.
 
 ### 3. Link diretto (`direct`)
 
@@ -165,7 +165,7 @@ Inserisci la **home** del sito, non il flusso:
 https://www.esempio.it
 ```
 
-VistoFlow cerca i contenuti sul sito e ricava il flusso dalla pagina del titolo.
+ViewerLAB cerca i contenuti sul sito e ricava il flusso dalla pagina del titolo.
 La ricerca usa il modulo HTML della home oppure, se il sito non ne espone uno,
 l'**URL di ricerca** opzionale con `{query}`:
 
@@ -228,19 +228,19 @@ Il risultato viene mostrato nella colonna **Stato** e nella barra inferiore.
 
 ```powershell
 .venv\Scripts\python.exe -m pip install pyinstaller
-.venv\Scripts\python.exe build_exe.py --clean          # cartella dist/VistoFlow
+.venv\Scripts\python.exe build_exe.py --clean          # cartella dist/ViewerLAB
 .venv\Scripts\python.exe build_exe.py --clean --onefile # singolo .exe
 ```
 
 Il catalogo demo (`sources/`) viene incluso automaticamente. mpv **non** viene
-incluso: per distribuire l'app metti `mpv.exe` in `dist/VistoFlow/bin/` oppure
+incluso: per distribuire l'app metti `mpv.exe` in `dist/ViewerLAB/bin/` oppure
 documenta `MPV_PATH`.
 
 Test dell'eseguibile:
 
 ```powershell
 $env:MPV_PATH = "D:\percorso\mpv.exe"
-Start-Process .\dist\VistoFlow\VistoFlow.exe `
+Start-Process .\dist\ViewerLAB\ViewerLAB.exe `
   -ArgumentList "--smoke-test","sintel" -Wait -PassThru
 ```
 
@@ -260,7 +260,7 @@ Start-Process .\dist\VistoFlow\VistoFlow.exe `
 ## Struttura
 
 ```
-VistoFlow/
+ViewerLAB/
 ├─ vistoflow/
 │  ├─ app.py           # entry point Qt + CLI
 │  ├─ main_window.py   # UI, ricerca/probe in thread, orchestrazione player

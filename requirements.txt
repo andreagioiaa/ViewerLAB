@@ -1,6 +1,6 @@
 # Python 3.14 (64 bit). Versioni esatte testate: constraints.txt
 # Installazione: run.bat / setup.bat (vedi tools/bootstrap.ps1)
-# VistoFlow - dipendenze runtime
+# ViewerLAB - dipendenze runtime
 # Interfaccia (welcome, Locale, Online) e browser integrato QtWebEngine
 PySide6>=6.12,<6.13
 
@@ -8,7 +8,7 @@ PySide6>=6.12,<6.13
 python-vlc>=3.0
 certifi>=2024.0
 
-# Motore online: canali, resolver, metadati TMDB, fonti VistoFlow
+# Motore online: canali, resolver, metadati TMDB, fonti ViewerLAB
 httpx>=0.27,<1
 beautifulsoup4>=4.12
 lxml>=5.2

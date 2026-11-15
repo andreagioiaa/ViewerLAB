@@ -1,6 +1,6 @@
 """Authentication routes: logout and current user.
 
-VistoFlow runs the panel without Jellyfin: the lifespan pins ``auth_mode`` to
+ViewerLAB runs the panel without Jellyfin: the lifespan pins ``auth_mode`` to
 open, so there is no setup wizard and no login. The session-backed branch is
 kept only because the request queue and its tests still model accounts.
 """
@@ -28,7 +28,7 @@ def _session_payload(user: models.User, csrf_token: str) -> dict:
 
 @router.get("/status")
 def auth_status():
-    """Public: whether the panel needs a login (never, in VistoFlow)."""
+    """Public: whether the panel needs a login (never, in ViewerLAB)."""
     if models.runtime_open_mode():
         return {"setup_done": True, "jellyfin_url": None, "auth_enabled": False}
     return {"setup_done": models.setup_done(), "jellyfin_url": None, "auth_enabled": True}

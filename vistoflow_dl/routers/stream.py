@@ -1,4 +1,4 @@
-"""Guarda in streaming: risolve il flusso e lo consegna al player di VistoFlow."""
+"""Guarda in streaming: risolve il flusso e lo consegna al player di ViewerLAB."""
 
 import asyncio
 import logging
@@ -35,7 +35,7 @@ def _domain() -> str:
 async def _watch(resolve, title: str, key: str) -> dict:
     play = stream.player()
     if play is None:
-        raise HTTPException(status_code=503, detail="Nessun player disponibile: apri il pannello da VistoFlow")
+        raise HTTPException(status_code=503, detail="Nessun player disponibile: apri il pannello da ViewerLAB")
     try:
         found = await asyncio.to_thread(resolve)
     except Exception as exc:
